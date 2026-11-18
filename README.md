@@ -17,9 +17,9 @@
 
 ---
 
-## 📥 Tải về và Cài đặt nhanh (Dành cho Windows)
+## 📥 Tải về & Cài đặt nhanh (Dành cho người dùng Windows)
 
-Bạn có thể tải ngay phiên bản chính thức mới nhất của Tày Music tại đây:
+Tải ngay phiên bản phát hành mới nhất của Tày Music tại đường dẫn sau:
 
 <p align="center">
   <a href="https://github.com/TeXfRuV50/tay-music/releases/latest">
@@ -27,61 +27,44 @@ Bạn có thể tải ngay phiên bản chính thức mới nhất của Tày Mu
   </a>
 </p>
 
-Tại trang phát hành (Releases), bạn chọn một trong hai định dạng tệp tùy theo nhu cầu:
+Tại trang [Releases](https://github.com/TeXfRuV50/tay-music/releases/latest), bạn có thể lựa chọn 1 trong 2 phiên bản phù hợp với nhu cầu:
 
-| Tệp tải về | Loại bản | Mô tả & Cách dùng |
+| Tệp cài đặt (.exe) | Phiên bản | Mô tả & Cách sử dụng |
 | :--- | :--- | :--- |
-| **`Tay Music Setup 1.0.0.exe`** | **Bộ cài đặt (Khuyên dùng)** | Tự động cài đặt vào máy tính, tạo shortcut trên màn hình Desktop và trong Start Menu để tiện mở ứng dụng hàng ngày. |
-| **`Tay Music-1.0.0-Portable.exe`** | **Bản Portable (Chạy ngay)** | Không cần cài đặt. Tải về nhấp đúp chuột là nghe nhạc được ngay, có thể copy vào USB để nghe trên nhiều máy tính khác nhau. |
+| **`Tay Music Setup 1.0.0.exe`** | **Bản cài đặt đầy đủ (Khuyên dùng)** | Tự động cài đặt vào hệ thống Windows, tự tạo biểu tượng shortcut ngoài màn hình Desktop và trong Start Menu để tiện mở ứng dụng hàng ngày. |
+| **`Tay Music-1.0.0-Portable.exe`** | **Bản Portable (Chạy ngay)** | Không cần cài đặt. Tải về nhấp đúp chuột là phát nhạc được ngay, có thể copy vào USB để mang theo và sử dụng trên nhiều máy tính khác nhau. |
 
 > [!NOTE]
 > ### 🛡️ Lưu ý về cảnh báo bảo vệ của Windows (SmartScreen)
-> Do **Tày Music** là phần mềm mã nguồn mở cá nhân và phi lợi nhuận (chưa đăng ký chứng chỉ số trả phí từ Microsoft), khi bạn mở file `.exe` lần đầu tiên, Windows có thể hiển thị hộp thoại màu xanh với thông báo:  
+> Do **Tày Music** là dự án mã nguồn mở phát triển độc lập phi lợi nhuận (chưa đăng ký chứng chỉ số thương mại đắt tiền từ Microsoft), khi bạn mở file `.exe` lần đầu tiên, Windows SmartScreen có thể hiển thị cảnh báo:  
 > **"Windows protected your PC" (Windows đã bảo vệ máy tính của bạn)**.  
 > 
 > **Cách xử lý rất đơn giản:**  
-> 1. Nhấp vào dòng chữ gạch chân **"More info"** *(Thông tin khác)*.  
-> 2. Chọn nút **"Run anyway"** *(Vẫn chạy)*. Ứng dụng sẽ khởi động bình thường và hoàn toàn an toàn.
+> 1. Nhấp chuột vào dòng chữ **"More info"** *(Thêm thông tin)* trên bảng cảnh báo.  
+> 2. Chọn nút **"Run anyway"** *(Vẫn chạy)*. Ứng dụng sẽ khởi động bình thường và hoàn toàn an toàn cho thiết bị của bạn.
 
 ---
 
-## 🌟 Giới thiệu & Tính năng nổi bật
+## 🌟 Giới thiệu & Tính năng chính
 
-**Tày Music** là ứng dụng nghe nhạc desktop được thiết kế tối giản, tập trung vào sự mượt mà và chất lượng âm thanh cao:
+**Tày Music** là ứng dụng nghe nhạc desktop dành riêng cho Windows, hướng tới trải nghiệm âm thanh mượt mà, giao diện tinh tế và tiêu tốn cực ít tài nguyên phần cứng:
 
-### 1. 🎧 Nghe nhạc chất lượng cao & Không gián đoạn
-- **Công nghệ Chunked Audio Proxy**: Phân tách luồng nhạc thành các chunk 512 KB mô phỏng cơ chế ExoPlayer, loại bỏ triệt để hiện tượng bị đứng bài hay ngắt kết nối sau 3 giây đầu.
-- **Tua nhạc siêu tốc (Instant Seeking)**: Nhảy đến bất kỳ đoạn nào của bài hát ngay tức khắc, không có độ trễ tải lại.
-- **Tự động thử lại khi mất mạng**: Giữ luồng phát liên tục ngay cả khi đường truyền chập chờn.
-
-### 2. 🎤 Lời bài hát Karaoke đồng bộ thời gian thực
-- **Tổng hợp đa nguồn (Multi-provider)**: Tự động tìm kiếm và đối chiếu lời bài hát từ **LrcLib**, **KuGou** và **NetEase**.
-- **Chạy chữ chính xác từng giây**: Cuộn mượt mà và làm sáng rõ từng câu hát theo đúng giai điệu đang phát.
-
-### 3. 🟢 Nhập & Đồng bộ danh sách phát từ Spotify
-- **Lấy trọn vẹn 100% bài hát**: Dán link playlist Spotify công khai để nhập toàn bộ danh sách, không bị cắt xén ở 100 bài đầu tiên.
-- **Đăng nhập Spotify tích hợp**: Đồng bộ nhanh danh sách *Bài hát đã thích (Liked Songs)* và các playlist cá nhân.
-- **Thuật toán so khớp TrackMatcher**: Khớp bài chuẩn xác theo thời lượng bản thu ($\le 4\text{s}$) và ca sĩ chính; tự động loại trừ các bản remix/cover không mong muốn.
-- **Đổi phiên bản dễ dàng (Fix Match)**: Cho phép chủ động chọn lại phiên bản hoặc bản live yêu thích chỉ với một cú nhấp chuột.
-
-### 4. 🎨 Giao diện Dark Mode & Tối ưu hiệu năng
-- Thiết kế tông tối hiện đại, thanh thoát, lấy cảm hứng từ phong cách trình phát nhạc đương đại.
-- **Màu nhấn động (Dynamic Color)**: Màu sắc thanh điều khiển và hiệu ứng tự đổi nhẹ nhàng theo ảnh bìa của bài hát đang phát.
-- **Nhẹ RAM và GPU**: Không sử dụng các hiệu ứng shader làm mờ phức tạp, đảm bảo máy tính cấu hình văn phòng hay tầm trung đều chạy mát và mượt.
-
-### 5. 💾 Quản lý thư viện cục bộ (Offline Database)
-- Toàn bộ danh sách yêu thích, playlist tạo thêm và lịch sử nghe nhạc được lưu trữ an toàn trong máy tính của bạn thông qua SQLite (`better-sqlite3`).
+- 🎧 **Nghe nhạc chất lượng cao & Ổn định**: Tích hợp cơ chế Chunked Stream Proxy chia nhỏ dữ liệu thành từng khối 512 KB, chống bóp băng thông và loại bỏ hoàn toàn lỗi ngắt kết nối sau 3 giây đầu. Hỗ trợ tua nhạc tức thì (Instant Seeking) theo từng mili-giây.
+- 🎤 **Tự động đồng bộ lời bài hát Karaoke (LRC)**: Tự động tìm kiếm và đối chiếu lời bài hát từ các nguồn uy tín (**LrcLib**, **KuGou**, **NetEase**), cuộn mượt và highlight từng câu hát khớp với giai điệu theo thời gian thực.
+- 🟢 **Nhập & Đồng bộ danh sách phát từ Spotify**: Nhập 100% số lượng bài hát từ link playlist Spotify công khai (không bị chặn ở mốc 100 bài). Tích hợp thuật toán so khớp `TrackMatcher` chuẩn xác theo thời lượng và ca sĩ, kèm tính năng **Đổi phiên bản (Fix Match)** trực tiếp trên giao diện.
+- 🎨 **Giao diện Dark Mode tối ưu nhẹ máy**: Thiết kế tông tối hiện đại, tự động trích xuất màu chủ đạo từ ảnh bìa album bài hát đang phát. Tắt các hiệu ứng làm mờ nặng nề để đảm bảo máy tính cấu hình văn phòng hay tầm trung đều chạy mát và mượt mà.
+- 💾 **Lưu trữ cục bộ an toàn**: Toàn bộ lịch sử nghe nhạc, bài hát yêu thích và danh sách phát cá nhân được lưu trữ offline trên máy thông qua SQLite (`better-sqlite3`).
 
 ---
 
 ## 💻 Dành cho lập trình viên (Build từ mã nguồn)
 
-Nếu bạn là lập trình viên và muốn đóng góp mã nguồn hoặc tự build ứng dụng từ source code:
+Dành cho những ai muốn tự đóng gói từ mã nguồn hoặc tham gia phát triển dự án:
 
 ### Yêu cầu môi trường
 - Hệ điều hành: Windows 10 / 11 (64-bit)
 - [Node.js](https://nodejs.org/) phiên bản 20 trở lên
-- Quản lý gói `npm`
+- Trình quản lý gói `npm`
 
 ### Các bước cài đặt và khởi chạy
 
@@ -96,7 +79,7 @@ Nếu bạn là lập trình viên và muốn đóng góp mã nguồn hoặc t�
    npm install
    ```
 
-3. **Chạy ứng dụng trong môi trường phát triển (Development Mode)**:
+3. **Chạy ứng dụng trong môi trường phát triển (Dev Mode)**:
    ```bash
    npm start
    ```
@@ -112,17 +95,17 @@ Nếu bạn là lập trình viên và muốn đóng góp mã nguồn hoặc t�
    # Hoặc chỉ tạo riêng bộ cài đặt NSIS Setup:
    npm run dist:nsis
    ```
-   *Các file `.exe` hoàn chỉnh sẽ nằm trong thư mục `release/`.*
+   *Các file `.exe` sau khi build xong sẽ được tạo tại thư mục `release/`.*
 
 ---
 
 ## 👏 Ghi nhận & Tri ân / Credits & Acknowledgments
 
-Dự án **Tày Music** được phát triển với sự tham khảo sâu sắc về kiến trúc trích xuất luồng InnerTube và cơ chế xử lý âm thanh từ dự án mã nguồn mở Android:
-- **[Mochy Music](https://github.com/)** – Ứng dụng nghe nhạc mã nguồn mở xuất sắc trên Android. Xin gửi lời cảm ơn và tri ân chân thành tới đội ngũ tác giả của Mochy Music vì những đóng góp quý báu cho cộng đồng.
+Dự án **Tày Music** trân trọng ghi nhận và chân thành cảm ơn dự án mã nguồn mở gốc:
+- **[Mochy Music](https://github.com/realidkroo/Mochy-Music)** (tác giả **[realidkroo](https://github.com/realidkroo)**) – Trình phát nhạc Android mã nguồn mở tuyệt vời đã cung cấp nền tảng kiến trúc reverse engineering luồng YouTube InnerTube và thuật toán trích xuất lời bài hát để từ đó phát triển nên phiên bản dành cho Windows PC này.
 
 ---
 
 ## 📄 Giấy phép / License
 
-Dự án này được phân phối theo giấy phép mã nguồn mở **[GNU General Public License v3.0 (GPL-3.0)](LICENSE)**.
+Dự án này được phát hành dưới giấy phép mã nguồn mở **[GNU General Public License v3.0 (GPL-3.0)](LICENSE)**. Bạn hoàn toàn có quyền sử dụng, chỉnh sửa và đóng góp cho dự án theo các điều khoản của giấy phép.
