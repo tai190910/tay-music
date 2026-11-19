@@ -61,7 +61,7 @@ export interface StreamInfo {
 }
 
 export type RepeatMode = "off" | "all" | "one";
-export type ActiveView = "home" | "search" | "library" | "playlist-detail";
+export type ActiveView = "home" | "search" | "library" | "playlist-detail" | "lyrics";
 
 export interface MochyApi {
   // YouTube API

@@ -58,22 +58,22 @@ export const SongRow: React.FC<SongRowProps> = ({
     <div
       onMouseEnter={checkLike}
       onClick={handlePlayClick}
-      className={`group flex items-center gap-3.5 px-3 py-2 rounded-xs text-xs font-sans transition-all duration-150 cursor-pointer select-none border ${
+      className={`group flex items-center gap-3.5 px-3 py-2 rounded-md text-xs font-sans transition-all duration-150 cursor-pointer select-none border ${
         isCurrent
-          ? "bg-[#161a22] text-white border-[#00f0ff]/40 shadow-[0_0_12px_rgba(0,240,255,0.08)]"
-          : "bg-transparent text-[#8492a6] hover:text-white hover:bg-[#181c24] border-transparent hover:border-[#242a35]"
+          ? "bg-[#16202e] text-white border-[#2589f5] shadow-[0_0_12px_rgba(37,137,245,0.25)]"
+          : "bg-[#0f151f] text-[#8492a6] hover:text-white hover:bg-[#16202e]/80 border-[#1e293b] hover:border-[#2589f5]/50"
       }`}
     >
-      {/* Monospace Index or Equalizer or Play Button */}
-      <div className="w-7 flex items-center justify-center flex-shrink-0 font-mono text-[11px] text-[#444c5c]">
+      {/* Index or Equalizer or Play Button */}
+      <div className="w-7 flex items-center justify-center flex-shrink-0 font-mono text-[11px] text-[#475569]">
         {isCurrent && isPlaying ? (
           <div className="flex items-end justify-center gap-0.5 h-3.5 group-hover:hidden">
-            <span className="w-0.5 bg-[#00ff9d] rounded-full animate-visualizer-1 h-full" />
-            <span className="w-0.5 bg-[#00f0ff] rounded-full animate-visualizer-2 h-full" />
-            <span className="w-0.5 bg-[#00ff9d] rounded-full animate-visualizer-3 h-full" />
+            <span className="w-0.5 bg-[#2ecc71] rounded-full animate-visualizer-1 h-full" />
+            <span className="w-0.5 bg-[#2589f5] rounded-full animate-visualizer-2 h-full" />
+            <span className="w-0.5 bg-[#2ecc71] rounded-full animate-visualizer-3 h-full" />
           </div>
         ) : (
-          <span className={`group-hover:hidden ${isCurrent ? "text-[#00f0ff] font-bold" : ""}`}>
+          <span className={`group-hover:hidden ${isCurrent ? "text-[#2589f5] font-bold" : ""}`}>
             {String(index + 1).padStart(2, "0")}
           </span>
         )}
@@ -85,20 +85,20 @@ export const SongRow: React.FC<SongRowProps> = ({
           className="hidden group-hover:block hover:scale-110 active:scale-95 transition-transform"
         >
           {isCurrent && isPlaying ? (
-            <Pause className="w-3.5 h-3.5 text-[#00f0ff] fill-[#00f0ff]" />
+            <Pause className="w-3.5 h-3.5 text-[#2589f5] fill-[#2589f5]" />
           ) : (
-            <Play className="w-3.5 h-3.5 text-[#00f0ff] fill-[#00f0ff] ml-0.5" />
+            <Play className="w-3.5 h-3.5 text-[#2ecc71] fill-[#2ecc71] ml-0.5" />
           )}
         </button>
       </div>
 
       {/* Square Thumbnail with 1px border */}
-      <div className="w-9 h-9 rounded-xs overflow-hidden bg-[#181c24] flex-shrink-0 border border-[#242a35] relative group-hover:border-[#00f0ff]/40 transition-colors">
+      <div className="w-9 h-9 rounded-md overflow-hidden bg-[#090d14] flex-shrink-0 border border-[#1e293b] relative group-hover:border-[#2589f5] transition-colors">
         {song.thumbnail ? (
           <img src={song.thumbnail} alt={song.title} className="w-full h-full object-cover" />
         ) : (
-          <div className="w-full h-full flex items-center justify-center bg-[#181c24]">
-            <Disc className="w-4 h-4 text-[#444c5c]" />
+          <div className="w-full h-full flex items-center justify-center bg-[#090d14]">
+            <Disc className="w-4 h-4 text-[#475569]" />
           </div>
         )}
       </div>
@@ -108,18 +108,18 @@ export const SongRow: React.FC<SongRowProps> = ({
         <div className="flex items-center gap-2">
           <span
             className={`truncate text-xs tracking-tight transition-colors ${
-              isCurrent ? "text-[#00f0ff] font-bold" : "text-[#e2e8f0] font-medium"
+              isCurrent ? "text-[#2589f5] font-bold" : "text-white font-medium"
             }`}
           >
             {song.title}
           </span>
           {song.explicit && (
-            <span className="text-[8px] font-mono font-bold px-1 rounded-xs bg-[#242a35] text-[#8492a6] border border-[#323b4a] flex-shrink-0">
+            <span className="text-[8px] font-mono font-bold px-1 rounded bg-[#1e293b] text-[#8492a6] border border-[#334155] flex-shrink-0">
               EXP
             </span>
           )}
         </div>
-        <span className="text-[11px] text-[#8492a6] truncate block mt-0.5">
+        <span className="text-[11px] text-[#38bdf8] font-mono truncate block mt-0.5">
           {song.artists.map((a) => a.name).join(", ")}
         </span>
       </div>
@@ -132,16 +132,16 @@ export const SongRow: React.FC<SongRowProps> = ({
             : "--:--")}
       </div>
 
-      {/* Cyber Action Buttons */}
+      {/* Action Buttons */}
       <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
         <button
           onClick={handleToggleLike}
           title={isLiked ? "Bỏ thích" : "Yêu thích"}
-          className="p-1 rounded-xs hover:bg-[#242a35] text-[#8492a6] hover:text-[#ff3366] transition-colors"
+          className="p-1 rounded-md hover:bg-[#16202e] text-[#8492a6] hover:text-[#e74c3c] transition-colors"
         >
           <Heart
             className={`w-3.5 h-3.5 ${
-              isLiked ? "fill-[#ff3366] text-[#ff3366] opacity-100" : ""
+              isLiked ? "fill-[#e74c3c] text-[#e74c3c] opacity-100" : ""
             }`}
           />
         </button>
@@ -153,7 +153,7 @@ export const SongRow: React.FC<SongRowProps> = ({
               onAddToPlaylist(song);
             }}
             title="Thêm vào playlist"
-            className="p-1 rounded-xs hover:bg-[#242a35] text-[#8492a6] hover:text-[#00f0ff] transition-colors"
+            className="p-1 rounded-md hover:bg-[#16202e] text-[#8492a6] hover:text-[#2589f5] transition-colors"
           >
             <Plus className="w-3.5 h-3.5" />
           </button>
@@ -166,7 +166,7 @@ export const SongRow: React.FC<SongRowProps> = ({
               onFixMatch(song);
             }}
             title="Đổi phiên bản / Khớp lại"
-            className="p-1 rounded-xs hover:bg-[#242a35] text-[#8492a6] hover:text-[#00ff9d] transition-colors"
+            className="p-1 rounded-md hover:bg-[#16202e] text-[#8492a6] hover:text-[#2ecc71] transition-colors"
           >
             <RefreshCw className="w-3.5 h-3.5" />
           </button>
@@ -179,7 +179,7 @@ export const SongRow: React.FC<SongRowProps> = ({
               onRemoveFromPlaylist(song.id);
             }}
             title="Xóa khỏi playlist"
-            className="p-1 rounded-xs hover:bg-rose-950/40 text-rose-400 hover:text-rose-300 transition-colors"
+            className="p-1 rounded-md hover:bg-rose-950/40 text-[#e74c3c] hover:text-rose-300 transition-colors"
           >
             <Trash2 className="w-3.5 h-3.5" />
           </button>

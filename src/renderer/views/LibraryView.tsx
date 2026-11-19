@@ -71,40 +71,40 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
   };
 
   return (
-    <div className="flex-1 overflow-y-auto p-6 space-y-5 select-none font-sans">
-      {/* Library Navigation Tabs - Cyber Style */}
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#242a35] pb-3">
+    <div className="flex-1 overflow-y-auto p-6 space-y-5 select-none font-sans bg-[#090d14]">
+      {/* Library Navigation Tabs */}
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#1e293b] pb-3">
         <div className="flex items-center gap-2">
           <button
             onClick={() => setActiveTab("liked")}
-            className={`flex items-center gap-2 px-3 py-1.5 rounded-xs text-xs font-mono transition-all border ${
+            className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-mono transition-all border ${
               activeTab === "liked"
-                ? "bg-[#181c24] text-[#00f0ff] border-[#00f0ff]/50 shadow-[0_0_10px_rgba(0,240,255,0.15)] font-bold"
-                : "text-[#8492a6] hover:text-white hover:bg-[#181c24]/50 border-transparent"
+                ? "bg-[#16202e] text-[#2589f5] border-[#2589f5] shadow-[0_0_10px_rgba(37,137,245,0.2)] font-bold"
+                : "text-[#8492a6] hover:text-white hover:bg-[#16202e]/50 border-transparent hover:border-[#1e293b]"
             }`}
           >
-            <Heart className={`w-3.5 h-3.5 ${activeTab === "liked" ? "text-rose-500 fill-rose-500" : ""}`} />
-            <span>[01] YÊU THÍCH ({likedSongs.length})</span>
+            <Heart className={`w-3.5 h-3.5 ${activeTab === "liked" ? "text-[#e74c3c] fill-[#e74c3c]" : ""}`} />
+            <span>[01] BÀI HÁT YÊU THÍCH ({likedSongs.length})</span>
           </button>
 
           <button
             onClick={() => setActiveTab("history")}
-            className={`flex items-center gap-2 px-3 py-1.5 rounded-xs text-xs font-mono transition-all border ${
+            className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-mono transition-all border ${
               activeTab === "history"
-                ? "bg-[#181c24] text-[#00f0ff] border-[#00f0ff]/50 shadow-[0_0_10px_rgba(0,240,255,0.15)] font-bold"
-                : "text-[#8492a6] hover:text-white hover:bg-[#181c24]/50 border-transparent"
+                ? "bg-[#16202e] text-[#2589f5] border-[#2589f5] shadow-[0_0_10px_rgba(37,137,245,0.2)] font-bold"
+                : "text-[#8492a6] hover:text-white hover:bg-[#16202e]/50 border-transparent hover:border-[#1e293b]"
             }`}
           >
             <History className="w-3.5 h-3.5" />
-            <span>[02] LỊCH SỬ</span>
+            <span>[02] LỊCH SỬ PHÁT</span>
           </button>
 
           <button
             onClick={() => setActiveTab("playlists")}
-            className={`flex items-center gap-2 px-3 py-1.5 rounded-xs text-xs font-mono transition-all border ${
+            className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-mono transition-all border ${
               activeTab === "playlists"
-                ? "bg-[#181c24] text-[#00f0ff] border-[#00f0ff]/50 shadow-[0_0_10px_rgba(0,240,255,0.15)] font-bold"
-                : "text-[#8492a6] hover:text-white hover:bg-[#181c24]/50 border-transparent"
+                ? "bg-[#16202e] text-[#2589f5] border-[#2589f5] shadow-[0_0_10px_rgba(37,137,245,0.2)] font-bold"
+                : "text-[#8492a6] hover:text-white hover:bg-[#16202e]/50 border-transparent hover:border-[#1e293b]"
             }`}
           >
             <ListMusic className="w-3.5 h-3.5" />
@@ -117,17 +117,17 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
           {onOpenSpotifyImport && (
             <button
               onClick={onOpenSpotifyImport}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xs bg-[#14231b] hover:bg-[#183024] text-[#00ff9d] border border-[#00ff9d]/30 text-xs font-mono font-medium shadow-[0_0_8px_rgba(0,255,157,0.1)] transition-all"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-[#090d14] hover:bg-[#16202e] text-[#2ecc71] border border-[#2ecc71]/40 text-xs font-mono font-medium shadow-xs transition-all cursor-pointer"
             >
               <Terminal className="w-3.5 h-3.5" />
-              <span>[UPLINK SPOTIFY]</span>
+              <span>[NHẬP SPOTIFY]</span>
             </button>
           )}
 
           {activeTab === "playlists" && (
             <button
               onClick={onOpenCreatePlaylist}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xs bg-[#00f0ff] hover:bg-[#33f3ff] text-black text-xs font-mono font-bold shadow-[0_0_10px_rgba(0,240,255,0.3)] transition-all cursor-pointer"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-[#2ecc71] hover:bg-[#27ae60] text-black text-xs font-mono font-bold shadow-xs transition-all cursor-pointer"
             >
               <Plus className="w-3.5 h-3.5" />
               <span>[+ PLAYLIST MỚI]</span>
@@ -137,10 +137,10 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
           {activeTab === "history" && historyItems.length > 0 && (
             <button
               onClick={handleClearHistory}
-              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xs bg-rose-950/20 hover:bg-rose-950/40 text-rose-400 border border-rose-900/40 text-xs font-mono transition-all"
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md bg-rose-950/20 hover:bg-rose-950/40 text-[#e74c3c] border border-rose-900/40 text-xs font-mono transition-all cursor-pointer"
             >
               <Trash2 className="w-3.5 h-3.5" />
-              <span>[XÓA LOGS]</span>
+              <span>[XÓA LỊCH SỬ]</span>
             </button>
           )}
         </div>
@@ -150,35 +150,35 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
       {activeTab === "liked" && (
         <div className="space-y-3">
           {likedSongs.length > 0 && (
-            <div className="flex items-center justify-between bg-[#13161c] border border-[#242a35] p-3 rounded-xs">
+            <div className="flex items-center justify-between bg-[#0f151f] border border-[#1e293b] p-3 rounded-md">
               <div className="flex items-center gap-3">
                 <button
                   onClick={handlePlayAllLiked}
-                  className="px-3 py-1.5 rounded-xs bg-[#00f0ff] hover:bg-[#33f3ff] text-black font-mono font-bold text-xs flex items-center gap-1.5 shadow-[0_0_10px_rgba(0,240,255,0.3)] transition-all active:scale-95"
+                  className="px-3.5 py-1.5 rounded-xs bg-[#2ecc71] hover:bg-[#27ae60] text-black font-mono font-bold text-xs flex items-center gap-1.5 shadow-[0_0_10px_rgba(46,204,113,0.3)] transition-all cursor-pointer"
                 >
                   <Play className="w-3.5 h-3.5 fill-black" />
                   <span>PHÁT TẤT CẢ</span>
                 </button>
                 <span className="text-[11px] font-mono text-[#8492a6]">
-                  // TOTAL: {likedSongs.length} BÀI HÁT TRONG KHO YÊU THÍCH
+                  // {likedSongs.length} BÀI HÁT TRONG DANH SÁCH YÊU THÍCH
                 </span>
               </div>
             </div>
           )}
 
           {likedSongs.length === 0 ? (
-            <div className="text-center py-20 text-[#444c5c] font-mono text-xs">
+            <div className="text-center py-20 text-[#475569] font-mono text-xs">
               <Heart className="w-10 h-10 mx-auto mb-2 opacity-25" />
-              <p>// EMPTY_SET: Chưa có bài hát nào được gắn cờ yêu thích</p>
+              <p>// CHƯA CÓ BÀI HÁT NÀO ĐƯỢC THÊM VÀO MỤC YÊU THÍCH</p>
             </div>
           ) : (
             <div className="space-y-1">
-              <div className="flex items-center gap-3.5 px-3 py-1.5 text-[10px] font-mono text-[#444c5c] uppercase tracking-wider border-b border-[#242a35]/60">
+              <div className="flex items-center gap-3.5 px-3 py-1.5 text-[10px] font-mono text-[#475569] uppercase tracking-wider border-b border-[#1e293b]/60">
                 <span className="w-7 text-center">#</span>
                 <span className="w-9" />
-                <span className="flex-1">Track / Artist</span>
-                <span className="w-12 text-right">Length</span>
-                <span className="w-20 text-right">Action</span>
+                <span className="flex-1">Tên bài hát / Ca sĩ</span>
+                <span className="w-12 text-right">Thời lượng</span>
+                <span className="w-20 text-right">Thao tác</span>
               </div>
               {likedSongs.map((song, idx) => (
                 <SongRow
@@ -198,18 +198,18 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
       {activeTab === "history" && (
         <div className="space-y-3">
           {historyItems.length === 0 ? (
-            <div className="text-center py-20 text-[#444c5c] font-mono text-xs">
+            <div className="text-center py-20 text-[#475569] font-mono text-xs">
               <History className="w-10 h-10 mx-auto mb-2 opacity-25" />
-              <p>// EMPTY_LOGS: Chưa ghi nhận lịch sử phát</p>
+              <p>// CHƯA CÓ LỊCH SỬ NGHE NHẠC</p>
             </div>
           ) : (
             <div className="space-y-1">
-              <div className="flex items-center gap-3.5 px-3 py-1.5 text-[10px] font-mono text-[#444c5c] uppercase tracking-wider border-b border-[#242a35]/60">
+              <div className="flex items-center gap-3.5 px-3 py-1.5 text-[10px] font-mono text-[#475569] uppercase tracking-wider border-b border-[#1e293b]/60">
                 <span className="w-7 text-center">#</span>
                 <span className="w-9" />
-                <span className="flex-1">Track / Artist</span>
-                <span className="w-12 text-right">Length</span>
-                <span className="w-20 text-right">Action</span>
+                <span className="flex-1">Tên bài hát / Ca sĩ</span>
+                <span className="w-12 text-right">Thời lượng</span>
+                <span className="w-20 text-right">Thao tác</span>
               </div>
               {historyItems
                 .filter((item) => {
@@ -240,45 +240,56 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
         </div>
       )}
 
-      {/* Tab 3: Playlists Grid */}
+      {/* Tab 3: Playlists (Styled like Scenario Cards in Image 2) */}
       {activeTab === "playlists" && (
         <div className="space-y-3">
           {playlists.length === 0 ? (
-            <div className="text-center py-20 text-[#444c5c] font-mono text-xs">
+            <div className="text-center py-20 text-[#475569] font-mono text-xs">
               <ListMusic className="w-10 h-10 mx-auto mb-2 opacity-25" />
-              <p>// ZERO_PLAYLISTS: Chưa có playlist nào được tạo</p>
+              <p>// CHƯA CÓ PLAYLIST NÀO ĐƯỢC TẠO</p>
             </div>
           ) : (
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
+            <div className="space-y-3">
               {playlists.map((pl, idx) => (
                 <div
                   key={pl.id}
                   onClick={() => onSelectPlaylist(pl.id)}
-                  className="group p-3 rounded-xs bg-[#13161c] border border-[#242a35] hover:border-[#00f0ff]/50 hover:bg-[#181c24] transition-all cursor-pointer flex flex-col relative shadow-[0_2px_10px_rgba(0,0,0,0.3)]"
+                  className="group p-4 rounded-md bg-[#0f151f] border border-[#1e293b] hover:border-[#e67e22] transition-all cursor-pointer relative shadow-sm flex flex-col justify-between gap-3"
                 >
-                  <div className="relative w-full aspect-square rounded-xs overflow-hidden bg-[#0d0f12] mb-2.5 flex-shrink-0 border border-[#242a35] flex items-center justify-center">
-                    {pl.thumbnailUrl ? (
-                      <img
-                        src={pl.thumbnailUrl}
-                        alt={pl.name}
-                        className="w-full h-full object-cover group-hover:scale-105 transition-transform"
-                      />
-                    ) : (
-                      <ListMusic className="w-8 h-8 text-[#444c5c] group-hover:text-[#00f0ff] transition-colors" />
-                    )}
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h3 className="font-bold text-sm text-white font-sans group-hover:text-[#e67e22] transition-colors">
+                        {pl.name}
+                      </h3>
+                      <span className="text-[9px] font-mono font-bold px-1.5 py-0.5 rounded-xs bg-[#e67e22]/15 text-[#e67e22] border border-[#e67e22]/50 uppercase">
+                        #{String(idx + 1).padStart(2, "0")} PLAYLIST
+                      </span>
+                    </div>
+
+                    <div className="text-[#e67e22] text-xs tracking-widest flex-shrink-0">
+                      ★★★★★
+                    </div>
                   </div>
 
-                  <div className="flex items-center justify-between text-[10px] font-mono text-[#444c5c] mb-1">
-                    <span>#{String(idx + 1).padStart(2, "0")}</span>
-                    <span className="text-[#00ff9d]">{pl.songCount || 0} TRK</span>
-                  </div>
+                  <p className="text-xs font-mono text-[#38bdf8] truncate">
+                    // {pl.description || "Danh sách phát tuyển chọn lưu trong cơ sở dữ liệu SQLite"}
+                  </p>
 
-                  <p className="text-xs font-bold text-white truncate font-sans" title={pl.name}>
-                    {pl.name}
-                  </p>
-                  <p className="text-[11px] text-[#8492a6] truncate font-mono mt-0.5">
-                    {pl.description || "// USER_COLLECTION"}
-                  </p>
+                  <div className="flex items-center justify-between pt-1 border-t border-[#1e293b]/50">
+                    <span className="text-[11px] font-mono text-[#475569]">
+                      Số lượng bài: <strong className="text-white">{pl.songCount || 0}</strong> bài
+                    </span>
+
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onSelectPlaylist(pl.id);
+                      }}
+                      className="px-3.5 py-1.5 rounded-xs bg-[#e67e22] hover:bg-[#d35400] text-black font-bold text-xs font-mono tracking-wider transition-all shadow-[0_0_8px_rgba(230,126,34,0.3)] cursor-pointer"
+                    >
+                      Mở Playlist
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>

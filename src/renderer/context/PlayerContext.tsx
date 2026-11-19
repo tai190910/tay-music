@@ -24,8 +24,10 @@ interface PlayerContextType {
   error: string | null;
   accentColor: ExtractedColor;
   streamInfo: StreamInfo | null;
+  resumeData: { song: Song; currentTime: number; duration: number; timestamp: number } | null;
 
   playSong: (song: Song, newQueue?: Song[]) => Promise<void>;
+  resumePlayback: () => Promise<void>;
   togglePlay: () => void;
   nextSong: () => void;
   prevSong: () => void;
@@ -69,6 +71,25 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     client: "VISIONOS",
     badgeText: "OPUS 160KBPS",
   });
+  const [resumeData, setResumeData] = useState<{
+    song: Song;
+    currentTime: number;
+    duration: number;
+    timestamp: number;
+  } | null>(null);
+
+  // Load saved resume progress on launch
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem("tay_music_resume");
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed?.song?.id) {
+          setResumeData(parsed);
+        }
+      }
+    } catch {}
+  }, []);
 
   // Dynamic dominant color extraction from current song thumbnail
   useEffect(() => {
@@ -133,12 +154,40 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     audioRef.current = audio;
 
     const onPlay = () => setIsPlaying(true);
-    const onPause = () => setIsPlaying(false);
+    const onPause = () => {
+      setIsPlaying(false);
+      if (currentSongRef.current && audio.currentTime > 2) {
+        const item = {
+          song: currentSongRef.current,
+          currentTime: audio.currentTime,
+          duration: audio.duration || 0,
+          timestamp: Date.now(),
+        };
+        setResumeData(item);
+        try {
+          localStorage.setItem("tay_music_resume", JSON.stringify(item));
+        } catch {}
+      }
+    };
 
     const onTimeUpdate = () => {
       const cur = audio.currentTime;
       setCurrentTime(cur);
       playedSecondsRef.current = Math.floor(cur);
+
+      // Periodically persist resume position every 5s
+      if (currentSongRef.current && cur > 3 && Math.floor(cur) % 5 === 0) {
+        const item = {
+          song: currentSongRef.current,
+          currentTime: cur,
+          duration: audio.duration || 0,
+          timestamp: Date.now(),
+        };
+        setResumeData(item);
+        try {
+          localStorage.setItem("tay_music_resume", JSON.stringify(item));
+        } catch {}
+      }
 
       // Update lyrics sync from ref
       const lines = lyricsDataRef.current?.parsed?.lines;
@@ -497,6 +546,16 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     setQueue((prev) => [...prev, song]);
   };
 
+  const resumePlayback = async () => {
+    if (resumeData?.song) {
+      const targetTime = resumeData.currentTime;
+      await loadAndPlay(resumeData.song);
+      if (targetTime > 0) {
+        setTimeout(() => seek(targetTime), 300);
+      }
+    }
+  };
+
   return (
     <PlayerContext.Provider
       value={{
@@ -519,8 +578,10 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         error,
         accentColor,
         streamInfo,
+        resumeData,
 
         playSong,
+        resumePlayback,
         togglePlay,
         nextSong,
         prevSong,

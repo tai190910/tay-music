@@ -78,11 +78,11 @@ export const SearchView: React.FC<SearchViewProps> = ({ onAddToPlaylist }) => {
   };
 
   return (
-    <div className="flex-1 overflow-y-auto p-6 space-y-5 select-none font-sans">
-      {/* Search Input Bar - Cyber Terminal Style */}
+    <div className="flex-1 overflow-y-auto p-6 space-y-5 select-none font-sans bg-[#090d14]">
+      {/* Search Input Bar - Retro-RPG Terminal Style */}
       <form onSubmit={handleSubmit} className="relative max-w-2xl">
-        <div className="relative flex items-center bg-[#13161c] border border-[#242a35] focus-within:border-[#00f0ff]/60 focus-within:shadow-[0_0_15px_rgba(0,240,255,0.15)] rounded-xs transition-all">
-          <div className="pl-3.5 pr-2 text-[#00f0ff] font-mono text-xs flex items-center gap-1.5 select-none">
+        <div className="relative flex items-center bg-[#0f151f] border border-[#1e293b] focus-within:border-[#2589f5] focus-within:shadow-[0_0_12px_rgba(37,137,245,0.2)] rounded-md transition-all">
+          <div className="pl-3.5 pr-2 text-[#2ecc71] font-mono text-xs flex items-center gap-1.5 select-none">
             <Terminal className="w-3.5 h-3.5" />
             <span className="font-bold">&gt;</span>
           </div>
@@ -93,11 +93,11 @@ export const SearchView: React.FC<SearchViewProps> = ({ onAddToPlaylist }) => {
             onChange={handleInputChange}
             placeholder="Nhập tên bài hát, nghệ sĩ hoặc từ khóa cần tìm..."
             autoFocus
-            className="w-full h-11 bg-transparent text-xs text-white placeholder-[#444c5c] font-mono focus:outline-none pr-12"
+            className="w-full h-11 bg-transparent text-xs text-white placeholder-[#475569] font-mono focus:outline-none pr-12"
           />
 
           {!query && (
-            <div className="absolute right-3 pointer-events-none flex items-center gap-1 text-[9px] font-mono text-[#8492a6] border border-[#242a35] px-1.5 py-0.5 rounded-xs bg-[#0d0f12]">
+            <div className="absolute right-3 pointer-events-none flex items-center gap-1 text-[9px] font-mono text-[#8492a6] border border-[#1e293b] px-1.5 py-0.5 rounded-xs bg-[#090d14]">
               <span>CTRL+F</span>
             </div>
           )}
@@ -110,7 +110,7 @@ export const SearchView: React.FC<SearchViewProps> = ({ onAddToPlaylist }) => {
                 setResults([]);
                 setHasSearched(false);
               }}
-              className="absolute right-3 p-1 rounded-xs text-[#8492a6] hover:text-[#ff3366]"
+              className="absolute right-3 p-1 rounded-xs text-[#8492a6] hover:text-[#e74c3c]"
             >
               <X className="w-4 h-4" />
             </button>
@@ -121,16 +121,16 @@ export const SearchView: React.FC<SearchViewProps> = ({ onAddToPlaylist }) => {
       {/* Quick Discovery Tags */}
       {!hasSearched && (
         <div className="space-y-2.5">
-          <div className="flex items-center gap-2 text-[10px] font-mono text-[#444c5c] uppercase tracking-wider">
-            <Sparkles className="w-3 h-3 text-[#00f0ff]" />
-            <span>// SUGGESTED_QUERIES</span>
+          <div className="flex items-center gap-2 text-[10px] font-mono text-[#475569] uppercase tracking-wider">
+            <Sparkles className="w-3 h-3 text-[#2589f5]" />
+            <span>// GỢI Ý TỪ KHÓA TÌM KIẾM</span>
           </div>
           <div className="flex flex-wrap gap-2">
             {QUICK_TAGS.map((tag) => (
               <button
                 key={tag}
                 onClick={() => handleTagClick(tag)}
-                className="px-3 py-1.5 rounded-xs bg-[#13161c] border border-[#242a35] text-[11px] font-mono text-[#8492a6] hover:text-[#00f0ff] hover:border-[#00f0ff]/40 hover:bg-[#181c24] transition-all cursor-pointer shadow-sm"
+                className="px-3 py-1.5 rounded-md bg-[#0f151f] border border-[#1e293b] text-[11px] font-mono text-[#8492a6] hover:text-[#2589f5] hover:border-[#2589f5] hover:bg-[#16202e] transition-all cursor-pointer shadow-xs"
               >
                 [#{tag.replace(/\s+/g, "_")}]
               </button>
@@ -141,33 +141,33 @@ export const SearchView: React.FC<SearchViewProps> = ({ onAddToPlaylist }) => {
 
       {/* Search Results Area */}
       {loading && (
-        <div className="flex items-center justify-center py-16 gap-3 text-xs font-mono text-[#00f0ff]">
+        <div className="flex items-center justify-center py-16 gap-3 text-xs font-mono text-[#2589f5]">
           <Loader2 className="w-5 h-5 animate-spin" />
-          <span>QUERYING_INNERTUBE_STREAM_DATABASE...</span>
+          <span>ĐANG_TRUY_VẤN_KHO_BÀI_HÁT...</span>
         </div>
       )}
 
       {!loading && hasSearched && results.length === 0 && (
-        <div className="text-center py-16 text-[#444c5c] font-mono text-xs">
+        <div className="text-center py-16 text-[#475569] font-mono text-xs">
           <Music className="w-8 h-8 mx-auto mb-2 opacity-30" />
-          <p>// ZERO_RECORDS_FOUND: Thử lại với từ khóa khác</p>
+          <p>// KHÔNG TÌM THẤY KẾT QUẢ PHÙ HỢP</p>
         </div>
       )}
 
       {!loading && results.length > 0 && (
         <div className="space-y-2">
-          <div className="flex items-center justify-between border-b border-[#242a35] pb-2 text-[10px] font-mono text-[#8492a6]">
-            <span>// QUERY_OUTPUT: {results.length} KẾT QUẢ CHO "{query}"</span>
-            <span className="text-[#00ff9d]">STATUS: OK_200</span>
+          <div className="flex items-center justify-between border-b border-[#1e293b] pb-2 text-[10px] font-mono text-[#8492a6]">
+            <span>// KẾT QUẢ TÌM KIẾM: {results.length} BÀI HÁT CHO "{query}"</span>
+            <span className="text-[#2ecc71] font-bold">STATUS: OK_200</span>
           </div>
 
           {/* Table Header Bar */}
-          <div className="flex items-center gap-3.5 px-3 py-1.5 text-[10px] font-mono text-[#444c5c] uppercase tracking-wider border-b border-[#242a35]/60">
+          <div className="flex items-center gap-3.5 px-3 py-1.5 text-[10px] font-mono text-[#475569] uppercase tracking-wider border-b border-[#1e293b]/60">
             <span className="w-7 text-center">#</span>
             <span className="w-9" />
-            <span className="flex-1">Track / Artist</span>
-            <span className="w-12 text-right">Length</span>
-            <span className="w-20 text-right">Action</span>
+            <span className="flex-1">Tên bài hát / Ca sĩ</span>
+            <span className="w-12 text-right">Thời lượng</span>
+            <span className="w-20 text-right">Thao tác</span>
           </div>
 
           <div className="space-y-1">

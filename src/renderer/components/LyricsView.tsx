@@ -1,21 +1,31 @@
 // src/renderer/components/LyricsView.tsx
 
-import React, { useEffect, useRef } from "react";
-import { X, Mic2, Disc, Terminal, Activity } from "lucide-react";
+import React, { useEffect, useRef, useState, useMemo } from "react";
+import { X, Mic2, Disc, Play, Terminal } from "lucide-react";
 import { usePlayer } from "../context/PlayerContext.tsx";
 
-function formatMsToLrc(ms: number): string {
-  const totalSec = Math.floor(ms / 1000);
-  const m = Math.floor(totalSec / 60);
-  const s = totalSec % 60;
+interface LyricsViewProps {
+  isMainStageView?: boolean;
+  onClose?: () => void;
+}
+
+function formatSeconds(sec: number): string {
+  if (isNaN(sec) || sec < 0) return "00:00";
+  const m = Math.floor(sec / 60);
+  const s = Math.floor(sec % 60);
   return `${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
 }
 
-export const LyricsView: React.FC = () => {
+export const LyricsView: React.FC<LyricsViewProps> = ({
+  isMainStageView = false,
+  onClose,
+}) => {
   const {
     currentSong,
     lyricsData,
     activeLyricsIndex,
+    currentTime,
+    duration,
     seek,
     setIsLyricsOpen,
     isPlaying,
@@ -24,7 +34,7 @@ export const LyricsView: React.FC = () => {
   const activeLineRef = useRef<HTMLDivElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
 
-  // Auto-scroll when active line changes
+  // Auto-scroll active line into center
   useEffect(() => {
     if (activeLineRef.current) {
       activeLineRef.current.scrollIntoView({
@@ -34,146 +44,181 @@ export const LyricsView: React.FC = () => {
     }
   }, [activeLyricsIndex]);
 
-  if (!currentSong) return null;
+  // Static lyrics typewriter state (for songs without timestamps)
+  const [staticCharCount, setStaticCharCount] = useState(0);
 
   const lines = lyricsData?.parsed?.lines || [];
+  const isSynced = lyricsData?.parsed?.isSynced && lines.length > 0;
+
+  // Handle static lyrics typewriter speed when not synced
+  useEffect(() => {
+    if (!isSynced && lyricsData?.lyrics) {
+      setStaticCharCount(0);
+      const fullLen = lyricsData.lyrics.length;
+      const interval = setInterval(() => {
+        setStaticCharCount((prev) => {
+          if (prev >= fullLen) {
+            clearInterval(interval);
+            return prev;
+          }
+          return prev + 1;
+        });
+      }, 40);
+      return () => clearInterval(interval);
+    }
+  }, [isSynced, lyricsData?.lyrics]);
+
+  // Calculate typed characters for active line in synced LRC
+  const activeLineProgress = useMemo(() => {
+    if (!isSynced || activeLyricsIndex < 0 || activeLyricsIndex >= lines.length) {
+      return { typedText: "", isComplete: false };
+    }
+
+    const curLine = lines[activeLyricsIndex];
+    const nextLine = lines[activeLyricsIndex + 1];
+
+    const startMs = curLine.time;
+    const nextMs = nextLine ? nextLine.time : startMs + 4500;
+    const lineDurationMs = Math.max(800, nextMs - startMs);
+
+    const elapsedMs = Math.max(0, currentTime * 1000 - startMs);
+    // Sing typically finishes across 80% of the line duration window
+    const typingDuration = Math.min(lineDurationMs * 0.85, 5000);
+    const ratio = Math.min(1, elapsedMs / (typingDuration || 1000));
+
+    const totalChars = curLine.text.length;
+    const charsToShow = Math.max(1, Math.min(totalChars, Math.ceil(ratio * totalChars)));
+
+    return {
+      typedText: curLine.text.slice(0, charsToShow),
+      isComplete: charsToShow >= totalChars,
+    };
+  }, [isSynced, activeLyricsIndex, lines, currentTime]);
+
+  if (!currentSong) {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center p-8 bg-[#090d14] text-[#475569] font-mono select-none">
+        <Disc className="w-12 h-12 mb-3 opacity-30 animate-spin" />
+        <p className="text-sm text-white font-bold">// CHƯA PHÁT BÀI HÁT NÀO</p>
+        <p className="text-xs text-[#8492a6] mt-1">Chọn một bài hát trong danh sách để xem lời bài hát chạy chữ</p>
+      </div>
+    );
+  }
+
+  const handleClose = () => {
+    if (onClose) onClose();
+    setIsLyricsOpen(false);
+  };
 
   return (
-    <div className="absolute inset-0 z-30 flex flex-col select-none overflow-hidden animate-fadeIn backdrop-blur-md bg-[#0d0f12]/92 font-sans border border-[#242a35]">
-      {/* Top Header Bar - Cyber Telemetry Style */}
-      <div className="h-12 px-6 flex items-center justify-between border-b border-[#242a35] bg-[#101217] flex-shrink-0 relative z-20">
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-xs bg-[#181c24] border border-[#00f0ff]/40 text-[#00f0ff] text-[10px] font-mono font-bold">
-            <Mic2 className="w-3 h-3 text-[#00f0ff]" />
-            <span>// TELEMETRY: KARAOKE_HUD</span>
+    <div
+      className={`flex flex-col select-none overflow-hidden font-mono bg-[#090d14] ${
+        isMainStageView
+          ? "w-full h-full"
+          : "absolute inset-0 z-40 backdrop-blur-md bg-[#090d14]/95 animate-fadeIn"
+      }`}
+    >
+      {/* Terminal Titlebar (Styled exactly after Reference Image 1) */}
+      <div className="px-6 pt-5 pb-3 bg-[#090d14] flex-shrink-0 z-20">
+        <div className="flex items-center justify-between">
+          {/* Header Line in Terminal Green (#2ecc71) font monospace */}
+          <div className="flex items-center gap-2 text-xs sm:text-sm font-mono font-semibold text-[#2ecc71]">
+            <span>📍</span>
+            <span className="truncate">
+              Đang phát: {currentSong.title}
+              {currentSong.artists.length > 0 && ` - ${currentSong.artists.map((a) => a.name).join(", ")}`}
+              {" - "}
+              {formatSeconds(currentTime)}
+            </span>
           </div>
 
-          {lyricsData?.provider && (
-            <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-xs bg-[#14231b] text-[#00ff9d] border border-[#00ff9d]/30">
-              PROVIDER: {lyricsData.provider.toUpperCase()}
-            </span>
-          )}
-
-          <div className="hidden sm:flex items-center gap-1.5 text-[10px] font-mono text-[#444c5c]">
-            <span className="w-1.5 h-1.5 rounded-full bg-[#00ff9d] animate-pulse" />
-            <span>SYNC: MILLISECOND_EXACT</span>
+          <div className="flex items-center gap-2">
+            {lyricsData?.provider && (
+              <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-xs bg-[#0f151f] text-[#38bdf8] border border-[#1e293b]">
+                NGUỒN: {lyricsData.provider.toUpperCase()}
+              </span>
+            )}
+            <button
+              onClick={handleClose}
+              title="Đóng lời bài hát (Esc)"
+              className="p-1 rounded-xs bg-[#0f151f] border border-[#1e293b] hover:border-[#2589f5] text-[#8492a6] hover:text-white transition-all cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+            </button>
           </div>
         </div>
 
-        <button
-          onClick={() => setIsLyricsOpen(false)}
-          title="Đóng giao diện lời bài hát (Esc)"
-          className="px-2.5 py-1 rounded-xs bg-[#181c24] hover:bg-[#242a35] border border-[#242a35] text-[#8492a6] hover:text-white font-mono text-xs flex items-center gap-1.5 transition-all cursor-pointer"
-        >
-          <X className="w-3.5 h-3.5" />
-          <span>[ESC / CLOSE]</span>
-        </button>
+        {/* Thin Divider Line (1px #1e293b) as seen in Reference Image 1 */}
+        <div className="border-b border-[#1e293b] mt-3" />
       </div>
 
-      {/* Main Split Body: Left Info / Right Lyrics */}
-      <div className="flex-1 flex overflow-hidden relative z-10">
-        {/* Left Side: Artwork & Equalizer Bar */}
-        <div className="w-5/12 p-8 flex flex-col justify-center items-center text-center border-r border-[#242a35] relative z-10 bg-[#0d0f12]/50">
-          {/* Album Cover with Cyber Border */}
-          <div className="relative w-56 h-56 rounded-xs overflow-hidden bg-[#181c24] border border-[#242a35] shadow-[0_0_20px_rgba(0,0,0,0.6)] flex-shrink-0 group">
-            {currentSong.thumbnail ? (
-              <img
-                src={currentSong.thumbnail}
-                alt={currentSong.title}
-                className="w-full h-full object-cover"
-              />
-            ) : (
-              <div className="w-full h-full flex items-center justify-center bg-[#181c24]">
-                <Disc className="w-16 h-16 text-[#444c5c]" />
-              </div>
-            )}
-            {/* Corner Bracket Accents */}
-            <div className="absolute top-0 left-0 w-3 h-3 border-t-2 border-l-2 border-[#00f0ff]" />
-            <div className="absolute top-0 right-0 w-3 h-3 border-t-2 border-r-2 border-[#00f0ff]" />
-            <div className="absolute bottom-0 left-0 w-3 h-3 border-b-2 border-l-2 border-[#00f0ff]" />
-            <div className="absolute bottom-0 right-0 w-3 h-3 border-b-2 border-r-2 border-[#00f0ff]" />
-          </div>
+      {/* Lyrics Terminal Content Body */}
+      <div
+        ref={containerRef}
+        className="flex-1 overflow-y-auto px-6 md:px-12 py-10 space-y-5 scroll-smooth relative"
+      >
+        {isSynced ? (
+          /* SYNCED LRC TYPEWRITER VIEW */
+          lines.map((line, idx) => {
+            const isActive = idx === activeLyricsIndex;
+            const isPast = idx < activeLyricsIndex;
 
-          {/* Song Metadata */}
-          <div className="mt-6 max-w-sm">
-            <h2 className="text-xl font-bold text-white tracking-tight line-clamp-2">
-              {currentSong.title}
-            </h2>
-            <p className="text-xs font-mono text-[#00f0ff] mt-1 font-semibold">
-              {currentSong.artists.map((a) => a.name).join(", ")}
-            </p>
-
-            {/* Audio Wave Visualizer */}
-            <div className="flex items-end justify-center gap-1 h-5 mt-4">
-              {[0.4, 0.9, 0.6, 1.0, 0.75, 0.85, 0.5, 0.7, 0.95, 0.35].map((scale, i) => (
-                <span
-                  key={i}
-                  className="w-1 rounded-xs transition-all duration-300"
-                  style={{
-                    backgroundColor: i % 2 === 0 ? "#00f0ff" : "#00ff9d",
-                    height: isPlaying ? `${Math.max(20, scale * 100)}%` : "20%",
-                    animation: isPlaying
-                      ? `visualizerBounce ${0.6 + (i % 4) * 0.15}s ease-in-out infinite alternate`
-                      : "none",
-                    animationDelay: `${i * 0.1}s`,
-                  }}
-                />
-              ))}
-            </div>
-          </div>
-        </div>
-
-        {/* Right Side: Flowing Karaoke Lyrics with Timestamp Tags */}
-        <div
-          ref={containerRef}
-          className="w-7/12 h-full overflow-y-auto px-8 py-32 space-y-4 scroll-smooth relative z-10"
-        >
-          {lines.length > 0 ? (
-            lines.map((line, idx) => {
-              const isActive = idx === activeLyricsIndex;
-              const isPast = idx < activeLyricsIndex;
-
+            if (isActive) {
               return (
                 <div
                   key={`${line.time}-${idx}`}
-                  ref={isActive ? activeLineRef : null}
+                  ref={activeLineRef}
                   onClick={() => seek(line.time / 1000)}
-                  className={`cursor-pointer transition-all duration-200 py-2 px-3 rounded-xs flex items-center gap-3 select-text group border ${
-                    isActive
-                      ? "text-[#00f0ff] font-bold text-2xl tracking-tight bg-[#181c24] border-[#00f0ff]/40 shadow-[0_0_15px_rgba(0,240,255,0.1)] font-sans"
-                      : isPast
-                      ? "text-[#8492a6] text-lg font-medium border-transparent hover:text-white hover:bg-[#181c24]/50"
-                      : "text-[#444c5c] text-lg font-medium border-transparent hover:text-[#8492a6] hover:bg-[#181c24]/30"
-                  }`}
-                  title="Nhấp để tua đến câu hát này"
+                  className="py-3 px-4 rounded-md bg-[#0f151f] border border-[#2589f5] shadow-[0_0_15px_rgba(37,137,245,0.2)] my-3 transition-all cursor-pointer group"
+                  title="Nhấp để phát lại câu này"
                 >
-                  {/* Monospace Timestamp Pill */}
-                  <span
-                    className={`text-[10px] font-mono px-1.5 py-0.5 rounded-xs flex-shrink-0 ${
-                      isActive
-                        ? "bg-[#00f0ff] text-black font-bold"
-                        : "bg-[#181c24] text-[#444c5c] border border-[#242a35]"
-                    }`}
-                  >
-                    {formatMsToLrc(line.time)}
-                  </span>
-
-                  <span className="leading-snug">{line.text}</span>
+                  <p className="text-white font-mono text-base sm:text-lg font-medium leading-relaxed tracking-wide">
+                    <span>{activeLineProgress.typedText}</span>
+                    {/* Blinking Blue Solid Block Cursor (█) as shown in Image 1 */}
+                    <span className="blinking-block-cursor" />
+                  </p>
                 </div>
               );
-            })
-          ) : (
-            <div className="h-full flex flex-col items-center justify-center text-center text-[#8492a6] py-16 font-mono text-xs">
-              <Mic2 className="w-10 h-10 mb-3 opacity-30 text-[#00f0ff] animate-pulse" />
-              <p className="text-sm font-bold text-white">
-                {lyricsData ? "// 404_LYRICS_NOT_FOUND" : "// FETCHING_LYRICS_STREAM..."}
-              </p>
-              <p className="text-[11px] text-[#444c5c] mt-1 max-w-sm">
-                Tự động tìm kiếm qua LrcLib, KuGou và NetEase
-              </p>
+            }
+
+            return (
+              <div
+                key={`${line.time}-${idx}`}
+                onClick={() => seek(line.time / 1000)}
+                className={`py-1 px-3 rounded-md transition-all cursor-pointer font-mono text-sm sm:text-base leading-relaxed ${
+                  isPast
+                    ? "text-[#8492a6] opacity-40 hover:opacity-80 hover:text-white"
+                    : "text-[#475569] opacity-30 hover:opacity-60 hover:text-white"
+                }`}
+                title="Nhấp để tua đến câu hát này"
+              >
+                <span>{line.text}</span>
+              </div>
+            );
+          })
+        ) : lyricsData?.lyrics ? (
+          /* STATIC LYRICS TYPEWRITER FALLBACK */
+          <div className="py-4 px-4 rounded-md bg-[#0f151f] border border-[#1e293b] space-y-2">
+            <div className="text-[10px] font-mono text-[#38bdf8] mb-2 uppercase">
+              // CHẾ ĐỘ TYPEWRITER LỜI BÀI HÁT TĨNH:
             </div>
-          )}
-        </div>
+            <p className="text-white font-mono text-base leading-relaxed whitespace-pre-wrap">
+              {lyricsData.lyrics.slice(0, staticCharCount)}
+              <span className="blinking-block-cursor" />
+            </p>
+          </div>
+        ) : (
+          /* NO LYRICS FOUND OR LOADING */
+          <div className="h-full flex flex-col items-center justify-center text-center py-20 text-[#475569]">
+            <Mic2 className="w-10 h-10 mb-3 opacity-30 text-[#2ecc71] animate-pulse" />
+            <p className="text-sm font-bold text-white font-mono">
+              {lyricsData ? "// 404_KHÔNG_TÌM_THẤY_LỜI_BÀI_HÁT" : "// ĐANG_TRUY_VẤN_LỜI_BÀI_HÁT..."}
+            </p>
+            <p className="text-xs text-[#8492a6] mt-1 font-mono">
+              Tự động đối soát từ LrcLib, KuGou và NetEase
+            </p>
+          </div>
+        )}
       </div>
     </div>
   );

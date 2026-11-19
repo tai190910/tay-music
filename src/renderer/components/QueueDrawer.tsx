@@ -16,23 +16,23 @@ export const QueueDrawer: React.FC = () => {
   if (!isQueueOpen) return null;
 
   return (
-    <div className="absolute right-0 top-0 bottom-22 w-80 bg-[#13161c]/95 backdrop-blur-md border-l border-[#242a35] z-20 flex flex-col select-none shadow-[0_0_30px_rgba(0,0,0,0.6)] animate-fadeIn font-sans">
+    <div className="absolute right-0 top-0 bottom-20 w-80 bg-[#0f151f]/95 backdrop-blur-md border-l border-[#1e293b] z-20 flex flex-col select-none shadow-[0_0_30px_rgba(0,0,0,0.7)] animate-fadeIn font-sans">
       {/* Header */}
-      <div className="p-3.5 border-b border-[#242a35] flex items-center justify-between bg-[#101217]">
+      <div className="p-3.5 border-b border-[#1e293b] flex items-center justify-between bg-[#090d14]">
         <div className="flex items-center gap-2">
-          <ListMusic className="w-4 h-4 text-[#00f0ff]" />
+          <ListMusic className="w-4 h-4 text-[#2589f5]" />
           <div>
             <h3 className="text-xs font-bold text-white font-mono uppercase tracking-wider">
-              // PLAYBACK_QUEUE
+              // DANH SÁCH CHỜ PHÁT
             </h3>
             <span className="text-[10px] font-mono text-[#8492a6]">
-              [{queue.length} TRACKS LOADED]
+              [{queue.length} BÀI HÁT TRONG HÀNG ĐỢI]
             </span>
           </div>
         </div>
         <button
           onClick={() => setIsQueueOpen(false)}
-          className="p-1 rounded-xs text-[#8492a6] hover:text-white hover:bg-[#181c24] border border-transparent hover:border-[#242a35] transition-all"
+          className="p-1 rounded-xs text-[#8492a6] hover:text-white hover:bg-[#16202e] border border-transparent hover:border-[#1e293b] transition-all cursor-pointer"
         >
           <X className="w-4 h-4" />
         </button>
@@ -41,9 +41,9 @@ export const QueueDrawer: React.FC = () => {
       {/* Song List */}
       <div className="flex-1 overflow-y-auto p-2 space-y-1">
         {queue.length === 0 ? (
-          <div className="h-full flex flex-col items-center justify-center text-center text-[#444c5c] font-mono p-4 text-xs">
+          <div className="h-full flex flex-col items-center justify-center text-center text-[#475569] font-mono p-4 text-xs">
             <Music className="w-8 h-8 mb-2 opacity-30" />
-            <p>// EMPTY_QUEUE: Chưa có bài hát chờ phát</p>
+            <p>// HÀNG ĐỢI ĐANG TRỐNG</p>
           </div>
         ) : (
           queue.map((song, idx) => {
@@ -52,13 +52,13 @@ export const QueueDrawer: React.FC = () => {
               <div
                 key={`${song.id}-${idx}`}
                 onClick={() => playSong(song, queue)}
-                className={`flex items-center gap-2.5 p-2 rounded-xs cursor-pointer transition-all border ${
+                className={`flex items-center gap-2.5 p-2 rounded-md cursor-pointer transition-all border ${
                   isCurrent
-                    ? "bg-[#181c24] border-[#00f0ff]/40 text-white shadow-[0_0_8px_rgba(0,240,255,0.1)]"
-                    : "hover:bg-[#181c24]/60 text-[#8492a6] border-transparent hover:border-[#242a35]"
+                    ? "bg-[#16202e] border-[#2589f5] text-white shadow-[0_0_8px_rgba(37,137,245,0.2)]"
+                    : "hover:bg-[#16202e]/60 text-[#8492a6] border-transparent hover:border-[#1e293b]"
                 }`}
               >
-                <div className="w-8 h-8 rounded-xs bg-[#0d0f12] overflow-hidden flex-shrink-0 border border-[#242a35] relative">
+                <div className="w-8 h-8 rounded-xs bg-[#090d14] overflow-hidden flex-shrink-0 border border-[#1e293b] relative">
                   {song.thumbnail ? (
                     <img
                       src={song.thumbnail}
@@ -67,7 +67,7 @@ export const QueueDrawer: React.FC = () => {
                     />
                   ) : (
                     <div className="w-full h-full flex items-center justify-center">
-                      <Music className="w-4 h-4 text-[#444c5c]" />
+                      <Music className="w-4 h-4 text-[#475569]" />
                     </div>
                   )}
                 </div>
@@ -75,19 +75,19 @@ export const QueueDrawer: React.FC = () => {
                 <div className="flex-1 min-w-0">
                   <p
                     className={`text-xs truncate font-medium ${
-                      isCurrent ? "text-[#00f0ff] font-bold" : "text-white"
+                      isCurrent ? "text-[#2589f5] font-bold" : "text-white"
                     }`}
                   >
                     {song.title}
                   </p>
-                  <p className="text-[10px] text-[#8492a6] truncate font-mono">
+                  <p className="text-[10px] text-[#38bdf8] truncate font-mono">
                     {song.artists.map((a) => a.name).join(", ")}
                   </p>
                 </div>
 
                 {isCurrent && (
-                  <span className="text-[9px] font-mono text-[#00ff9d] bg-[#00ff9d]/10 px-1 py-0.5 rounded-xs border border-[#00ff9d]/30 font-bold">
-                    PLAY
+                  <span className="text-[9px] font-mono text-[#2ecc71] bg-[#2ecc71]/10 px-1 py-0.5 rounded-xs border border-[#2ecc71]/40 font-bold">
+                    PLAYING
                   </span>
                 )}
               </div>

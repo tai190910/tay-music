@@ -12,6 +12,7 @@ import { HomeView } from "./views/HomeView.tsx";
 import { SearchView } from "./views/SearchView.tsx";
 import { LibraryView } from "./views/LibraryView.tsx";
 import { PlaylistDetailView } from "./views/PlaylistDetailView.tsx";
+import { Radio, Terminal, Settings, ListMusic, Mic2, Disc } from "lucide-react";
 import type { ActiveView, Song, Playlist } from "./types.ts";
 
 const MainLayout: React.FC = () => {
@@ -20,6 +21,8 @@ const MainLayout: React.FC = () => {
     isPlaying,
     isLyricsOpen,
     setIsLyricsOpen,
+    isQueueOpen,
+    setIsQueueOpen,
     togglePlay,
     seek,
     currentTime,
@@ -44,7 +47,6 @@ const MainLayout: React.FC = () => {
         target.tagName === "TEXTAREA" ||
         target.isContentEditable;
 
-      // Ctrl + F or Cmd + F: Quick Search
       if ((e.ctrlKey || e.metaKey) && (e.key === "f" || e.key === "F")) {
         e.preventDefault();
         setSelectedPlaylistId(null);
@@ -59,7 +61,6 @@ const MainLayout: React.FC = () => {
         return;
       }
 
-      // Escape: Close modals/lyrics
       if (e.key === "Escape") {
         if (isLyricsOpen) setIsLyricsOpen(false);
         if (isSpotifyModalOpen) setIsSpotifyModalOpen(false);
@@ -114,43 +115,81 @@ const MainLayout: React.FC = () => {
   };
 
   return (
-    <div className="h-screen w-screen flex flex-col bg-[#0d0f12] text-[#e2e8f0] overflow-hidden select-none font-sans cyber-grid-bg">
-      {/* Top HUD Telemetry Banner */}
-      <header className="h-7 bg-[#101217] border-b border-[#242a35] px-4 flex items-center justify-between text-[10px] font-mono text-[#8492a6] flex-shrink-0 z-20">
-        <div className="flex items-center gap-3">
-          <span className="text-[#00f0ff] font-bold tracking-wider">[TÀY.OS HUD]</span>
-          <span className="text-[#444c5c]">//</span>
-          <span className="flex items-center gap-1">
-            <span className="w-1.5 h-1.5 rounded-full bg-[#00ff9d] animate-pulse" />
-            <span className="text-[#00ff9d]">SYS: NOMINAL</span>
+    <div className="h-screen w-screen flex flex-col bg-[#090d14] text-[#e2e8f0] overflow-hidden select-none font-sans">
+      {/* 1. Top Header Bar (Retro-RPG HUD Topbar) */}
+      <header className="h-10 bg-[#0f151f] border-b border-[#1e293b] px-4 flex items-center justify-between flex-shrink-0 z-30 select-none">
+        {/* Left: Icon + TÀY MUSIC + [DESKTOP PLAYER] badge */}
+        <div className="flex items-center gap-2.5">
+          <div className="w-5 h-5 rounded-xs bg-[#e67e22]/15 border border-[#e67e22]/50 flex items-center justify-center text-[#e67e22]">
+            <Radio className="w-3.5 h-3.5" />
+          </div>
+          <span className="font-bold text-xs tracking-wider text-white font-sans">
+            TÀY MUSIC
+          </span>
+          {/* Badge styled exactly like [HARDCORE TEXT-RPG] in reference image */}
+          <span className="text-[9px] font-mono font-bold tracking-widest text-[#e74c3c] border border-[#e74c3c]/80 bg-[#e74c3c]/10 px-1.5 py-0.5 rounded-xs uppercase">
+            DESKTOP PLAYER
           </span>
         </div>
 
-        <div className="hidden md:flex items-center gap-2 text-[#8492a6]">
+        {/* Center: Live playing status ticker */}
+        <div className="hidden md:flex items-center gap-2 text-xs font-mono text-[#8492a6]">
           {currentSong ? (
             <span className="truncate max-w-md">
-              <span className="text-[#00f0ff] font-bold">&gt;&gt;</span> NOW_PLAYING:{" "}
-              <span className="text-white font-sans font-medium">{currentSong.title}</span> -{" "}
-              <span className="text-[#8492a6]">{currentSong.artists.map((a) => a.name).join(", ")}</span>
+              <span className="text-[#2ecc71] font-bold">📍</span>{" "}
+              <span className="text-white font-sans font-medium">{currentSong.title}</span>{" "}
+              <span className="text-[#38bdf8]">// {currentSong.artists.map((a) => a.name).join(", ")}</span>
             </span>
           ) : (
-            <span>// CHUNKED_AUDIO_STREAM_PROXY: STANDBY</span>
+            <span className="text-[#475569]">// CHUẨN BỊ PHÁT NHẠC</span>
           )}
         </div>
 
-        <div className="flex items-center gap-2 text-[9px] text-[#444c5c]">
-          <span className="px-1.5 py-0.5 rounded-xs bg-[#181c24] border border-[#242a35]">
-            [SPACE] PLAY
-          </span>
-          <span className="px-1.5 py-0.5 rounded-xs bg-[#181c24] border border-[#242a35]">
-            [CTRL+F] SEARCH
-          </span>
+        {/* Right: Small square 1px-bordered action buttons */}
+        <div className="flex items-center gap-1.5">
+          {/* Toggle Terminal Lyrics View */}
+          <button
+            onClick={() => {
+              setSelectedPlaylistId(null);
+              setActiveView("lyrics");
+            }}
+            title="Mở màn hình Lời bài hát Terminal"
+            className={`w-7 h-7 rounded-xs border flex items-center justify-center transition-all cursor-pointer ${
+              activeView === "lyrics"
+                ? "bg-[#16202e] border-[#2589f5] text-[#2589f5] shadow-[0_0_8px_rgba(37,137,245,0.3)]"
+                : "bg-[#090d14] border-[#1e293b] text-[#8492a6] hover:text-white hover:border-[#2589f5]"
+            }`}
+          >
+            <Mic2 className="w-3.5 h-3.5" />
+          </button>
+
+          {/* Import Spotify */}
+          <button
+            onClick={() => setIsSpotifyModalOpen(true)}
+            title="Nhập playlist từ Spotify"
+            className="w-7 h-7 rounded-xs bg-[#090d14] border border-[#1e293b] hover:border-[#2ecc71] text-[#2ecc71] flex items-center justify-center transition-all cursor-pointer shadow-xs"
+          >
+            <Terminal className="w-3.5 h-3.5" />
+          </button>
+
+          {/* Toggle Queue */}
+          <button
+            onClick={() => setIsQueueOpen((prev) => !prev)}
+            title="Mở danh sách hàng đợi phát"
+            className={`w-7 h-7 rounded-xs border flex items-center justify-center transition-all cursor-pointer ${
+              isQueueOpen
+                ? "bg-[#16202e] border-[#2589f5] text-[#2589f5] shadow-[0_0_8px_rgba(37,137,245,0.3)]"
+                : "bg-[#090d14] border-[#1e293b] text-[#8492a6] hover:text-white hover:border-[#2589f5]"
+            }`}
+          >
+            <ListMusic className="w-3.5 h-3.5" />
+          </button>
         </div>
       </header>
 
       {/* Main Workspace Frame */}
       <div className="flex-1 flex overflow-hidden relative">
-        {/* Left Cyber Sidebar */}
+        {/* Left Sidebar */}
         <Sidebar
           activeView={activeView}
           setActiveView={setActiveView}
@@ -161,12 +200,16 @@ const MainLayout: React.FC = () => {
           playlistRefreshKey={playlistRefreshKey}
         />
 
-        {/* Center Main Stage (Fixed 100vh viewport, internal scroll only) */}
-        <main className="flex-1 flex flex-col overflow-hidden bg-[#0d0f12] relative">
+        {/* Center Main Stage (Fixed 100vh Viewport, only internal scroll) */}
+        <main className="flex-1 flex flex-col overflow-hidden bg-[#090d14] relative">
           {activeView === "home" && (
             <HomeView
               onAddToPlaylist={(song) => setSongForAddToPlaylist(song)}
               onNavigateSearch={() => setActiveView("search")}
+              onSelectPlaylist={(id) => {
+                setSelectedPlaylistId(id);
+                setActiveView("playlist-detail");
+              }}
             />
           )}
 
@@ -198,19 +241,26 @@ const MainLayout: React.FC = () => {
               onPlaylistDeleted={() => refreshPlaylists()}
             />
           )}
+
+          {/* Fullscreen/Main Terminal Synced Lyrics View */}
+          {activeView === "lyrics" && (
+            <div className="flex-1 overflow-hidden relative">
+              <LyricsView isMainStageView={true} onClose={() => setActiveView("home")} />
+            </div>
+          )}
         </main>
 
-        {/* Fullscreen Cyber Karaoke Lyrics HUD */}
-        {isLyricsOpen && <LyricsView />}
+        {/* Overlay Karaoke Lyrics (When opened via [LRC] button from playerbar) */}
+        {isLyricsOpen && activeView !== "lyrics" && <LyricsView />}
 
-        {/* Cyber Queue Drawer */}
+        {/* Queue Drawer */}
         <QueueDrawer />
       </div>
 
-      {/* Bottom RPG Character Status Player HUD */}
+      {/* 2. Bottom Fixed Player HUD */}
       <PlayerBar />
 
-      {/* Cyber Modals */}
+      {/* Modals */}
       <CreatePlaylistModal
         isOpen={isCreatePlaylistOpen}
         onClose={() => setIsCreatePlaylistOpen(false)}
