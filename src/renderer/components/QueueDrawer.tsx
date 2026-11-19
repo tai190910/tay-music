@@ -1,7 +1,7 @@
 // src/renderer/components/QueueDrawer.tsx
 
 import React from "react";
-import { X, Play, Music, Trash2 } from "lucide-react";
+import { X, Play, Music, ListMusic } from "lucide-react";
 import { usePlayer } from "../context/PlayerContext.tsx";
 
 export const QueueDrawer: React.FC = () => {
@@ -16,31 +16,34 @@ export const QueueDrawer: React.FC = () => {
   if (!isQueueOpen) return null;
 
   return (
-    <div className="absolute right-0 top-0 bottom-22 w-80 bg-mochy-sidebar border-l border-mochy-border z-20 flex flex-col select-none shadow-2xl animate-fadeIn">
+    <div className="absolute right-0 top-0 bottom-22 w-80 bg-[#13161c]/95 backdrop-blur-md border-l border-[#242a35] z-20 flex flex-col select-none shadow-[0_0_30px_rgba(0,0,0,0.6)] animate-fadeIn font-sans">
       {/* Header */}
-      <div className="p-4 border-b border-mochy-border/60 flex items-center justify-between">
-        <div>
-          <h3 className="text-sm font-bold text-white uppercase tracking-wider">
-            Danh sách chờ phát
-          </h3>
-          <span className="text-xs text-mochy-subtext">
-            {queue.length} bài hát
-          </span>
+      <div className="p-3.5 border-b border-[#242a35] flex items-center justify-between bg-[#101217]">
+        <div className="flex items-center gap-2">
+          <ListMusic className="w-4 h-4 text-[#00f0ff]" />
+          <div>
+            <h3 className="text-xs font-bold text-white font-mono uppercase tracking-wider">
+              // PLAYBACK_QUEUE
+            </h3>
+            <span className="text-[10px] font-mono text-[#8492a6]">
+              [{queue.length} TRACKS LOADED]
+            </span>
+          </div>
         </div>
         <button
           onClick={() => setIsQueueOpen(false)}
-          className="p-1 rounded-md text-mochy-muted hover:text-white hover:bg-mochy-cardHover transition-colors"
+          className="p-1 rounded-xs text-[#8492a6] hover:text-white hover:bg-[#181c24] border border-transparent hover:border-[#242a35] transition-all"
         >
-          <X className="w-5 h-5" />
+          <X className="w-4 h-4" />
         </button>
       </div>
 
       {/* Song List */}
       <div className="flex-1 overflow-y-auto p-2 space-y-1">
         {queue.length === 0 ? (
-          <div className="h-full flex flex-col items-center justify-center text-center text-mochy-subtext p-4">
-            <Music className="w-8 h-8 mb-2 opacity-40" />
-            <p className="text-xs">Chưa có bài hát trong danh sách chờ</p>
+          <div className="h-full flex flex-col items-center justify-center text-center text-[#444c5c] font-mono p-4 text-xs">
+            <Music className="w-8 h-8 mb-2 opacity-30" />
+            <p>// EMPTY_QUEUE: Chưa có bài hát chờ phát</p>
           </div>
         ) : (
           queue.map((song, idx) => {
@@ -49,13 +52,13 @@ export const QueueDrawer: React.FC = () => {
               <div
                 key={`${song.id}-${idx}`}
                 onClick={() => playSong(song, queue)}
-                className={`flex items-center gap-3 p-2 rounded-lg cursor-pointer transition-colors group ${
+                className={`flex items-center gap-2.5 p-2 rounded-xs cursor-pointer transition-all border ${
                   isCurrent
-                    ? "bg-mochy-card border border-mochy-border/80 text-white"
-                    : "hover:bg-mochy-cardHover/60 text-mochy-muted"
+                    ? "bg-[#181c24] border-[#00f0ff]/40 text-white shadow-[0_0_8px_rgba(0,240,255,0.1)]"
+                    : "hover:bg-[#181c24]/60 text-[#8492a6] border-transparent hover:border-[#242a35]"
                 }`}
               >
-                <div className="w-9 h-9 rounded bg-mochy-card overflow-hidden flex-shrink-0 relative">
+                <div className="w-8 h-8 rounded-xs bg-[#0d0f12] overflow-hidden flex-shrink-0 border border-[#242a35] relative">
                   {song.thumbnail ? (
                     <img
                       src={song.thumbnail}
@@ -63,29 +66,30 @@ export const QueueDrawer: React.FC = () => {
                       className="w-full h-full object-cover"
                     />
                   ) : (
-                    <div className="w-full h-full flex items-center justify-center bg-mochy-card">
-                      <Music className="w-4 h-4 text-mochy-subtext" />
-                    </div>
-                  )}
-                  {isCurrent && (
-                    <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
-                      <div className="w-2 h-2 rounded-full bg-mochy-accent animate-ping" />
+                    <div className="w-full h-full flex items-center justify-center">
+                      <Music className="w-4 h-4 text-[#444c5c]" />
                     </div>
                   )}
                 </div>
 
                 <div className="flex-1 min-w-0">
                   <p
-                    className={`text-xs font-medium truncate ${
-                      isCurrent ? "text-mochy-accent font-semibold" : "text-white"
+                    className={`text-xs truncate font-medium ${
+                      isCurrent ? "text-[#00f0ff] font-bold" : "text-white"
                     }`}
                   >
                     {song.title}
                   </p>
-                  <p className="text-[11px] text-mochy-subtext truncate">
+                  <p className="text-[10px] text-[#8492a6] truncate font-mono">
                     {song.artists.map((a) => a.name).join(", ")}
                   </p>
                 </div>
+
+                {isCurrent && (
+                  <span className="text-[9px] font-mono text-[#00ff9d] bg-[#00ff9d]/10 px-1 py-0.5 rounded-xs border border-[#00ff9d]/30 font-bold">
+                    PLAY
+                  </span>
+                )}
               </div>
             );
           })

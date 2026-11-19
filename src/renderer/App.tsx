@@ -16,6 +16,8 @@ import type { ActiveView, Song, Playlist } from "./types.ts";
 
 const MainLayout: React.FC = () => {
   const {
+    currentSong,
+    isPlaying,
     isLyricsOpen,
     setIsLyricsOpen,
     togglePlay,
@@ -24,8 +26,8 @@ const MainLayout: React.FC = () => {
     duration,
     volume,
     setVolume,
-    accentColor,
   } = usePlayer();
+
   const [activeView, setActiveView] = useState<ActiveView>("home");
   const [selectedPlaylistId, setSelectedPlaylistId] = useState<string | null>(null);
   const [isCreatePlaylistOpen, setIsCreatePlaylistOpen] = useState(false);
@@ -33,7 +35,7 @@ const MainLayout: React.FC = () => {
   const [songForAddToPlaylist, setSongForAddToPlaylist] = useState<Song | null>(null);
   const [playlistRefreshKey, setPlaylistRefreshKey] = useState(0);
 
-  // Desktop Global Keyboard Shortcuts
+  // Global Keyboard Shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement;
@@ -66,7 +68,6 @@ const MainLayout: React.FC = () => {
         return;
       }
 
-      // Ignore playback shortcuts while typing
       if (isInput) return;
 
       if (e.code === "Space") {
@@ -113,15 +114,43 @@ const MainLayout: React.FC = () => {
   };
 
   return (
-    <div
-      className="h-screen w-screen flex flex-col text-white overflow-hidden font-sans transition-colors duration-1000"
-      style={{
-        background: `radial-gradient(circle at 50% 0%, rgba(${accentColor.rgbString}, 0.08) 0%, rgba(11, 12, 16, 0.98) 55%, #0b0c10 100%)`,
-      }}
-    >
-      {/* Main Content Area */}
+    <div className="h-screen w-screen flex flex-col bg-[#0d0f12] text-[#e2e8f0] overflow-hidden select-none font-sans cyber-grid-bg">
+      {/* Top HUD Telemetry Banner */}
+      <header className="h-7 bg-[#101217] border-b border-[#242a35] px-4 flex items-center justify-between text-[10px] font-mono text-[#8492a6] flex-shrink-0 z-20">
+        <div className="flex items-center gap-3">
+          <span className="text-[#00f0ff] font-bold tracking-wider">[TÀY.OS HUD]</span>
+          <span className="text-[#444c5c]">//</span>
+          <span className="flex items-center gap-1">
+            <span className="w-1.5 h-1.5 rounded-full bg-[#00ff9d] animate-pulse" />
+            <span className="text-[#00ff9d]">SYS: NOMINAL</span>
+          </span>
+        </div>
+
+        <div className="hidden md:flex items-center gap-2 text-[#8492a6]">
+          {currentSong ? (
+            <span className="truncate max-w-md">
+              <span className="text-[#00f0ff] font-bold">&gt;&gt;</span> NOW_PLAYING:{" "}
+              <span className="text-white font-sans font-medium">{currentSong.title}</span> -{" "}
+              <span className="text-[#8492a6]">{currentSong.artists.map((a) => a.name).join(", ")}</span>
+            </span>
+          ) : (
+            <span>// CHUNKED_AUDIO_STREAM_PROXY: STANDBY</span>
+          )}
+        </div>
+
+        <div className="flex items-center gap-2 text-[9px] text-[#444c5c]">
+          <span className="px-1.5 py-0.5 rounded-xs bg-[#181c24] border border-[#242a35]">
+            [SPACE] PLAY
+          </span>
+          <span className="px-1.5 py-0.5 rounded-xs bg-[#181c24] border border-[#242a35]">
+            [CTRL+F] SEARCH
+          </span>
+        </div>
+      </header>
+
+      {/* Main Workspace Frame */}
       <div className="flex-1 flex overflow-hidden relative">
-        {/* Left Navigation Sidebar */}
+        {/* Left Cyber Sidebar */}
         <Sidebar
           activeView={activeView}
           setActiveView={setActiveView}
@@ -132,8 +161,8 @@ const MainLayout: React.FC = () => {
           playlistRefreshKey={playlistRefreshKey}
         />
 
-        {/* Center Dynamic View */}
-        <main className="flex-1 flex flex-col overflow-hidden bg-mochy-bg relative">
+        {/* Center Main Stage (Fixed 100vh viewport, internal scroll only) */}
+        <main className="flex-1 flex flex-col overflow-hidden bg-[#0d0f12] relative">
           {activeView === "home" && (
             <HomeView
               onAddToPlaylist={(song) => setSongForAddToPlaylist(song)}
@@ -171,17 +200,17 @@ const MainLayout: React.FC = () => {
           )}
         </main>
 
-        {/* Fullscreen Synchronized Karaoke Lyrics View */}
+        {/* Fullscreen Cyber Karaoke Lyrics HUD */}
         {isLyricsOpen && <LyricsView />}
 
-        {/* Upcoming Song Queue Drawer */}
+        {/* Cyber Queue Drawer */}
         <QueueDrawer />
       </div>
 
-      {/* Bottom Fixed Player Bar */}
+      {/* Bottom RPG Character Status Player HUD */}
       <PlayerBar />
 
-      {/* Modals */}
+      {/* Cyber Modals */}
       <CreatePlaylistModal
         isOpen={isCreatePlaylistOpen}
         onClose={() => setIsCreatePlaylistOpen(false)}

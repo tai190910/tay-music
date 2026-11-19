@@ -1,7 +1,7 @@
 // src/renderer/views/SearchView.tsx
 
 import React, { useState, useEffect, useRef } from "react";
-import { Search, X, Loader2, Music, Sparkles } from "lucide-react";
+import { Search, X, Loader2, Music, Terminal, Sparkles } from "lucide-react";
 import type { Song } from "../types.ts";
 import { SongRow } from "../components/SongRow.tsx";
 
@@ -78,26 +78,30 @@ export const SearchView: React.FC<SearchViewProps> = ({ onAddToPlaylist }) => {
   };
 
   return (
-    <div className="flex-1 overflow-y-auto p-8 space-y-6 select-none">
-      {/* Search Input Bar */}
+    <div className="flex-1 overflow-y-auto p-6 space-y-5 select-none font-sans">
+      {/* Search Input Bar - Cyber Terminal Style */}
       <form onSubmit={handleSubmit} className="relative max-w-2xl">
-        <div className="relative flex items-center">
-          <Search className="w-5 h-5 absolute left-4 text-mochy-subtext pointer-events-none" />
+        <div className="relative flex items-center bg-[#13161c] border border-[#242a35] focus-within:border-[#00f0ff]/60 focus-within:shadow-[0_0_15px_rgba(0,240,255,0.15)] rounded-xs transition-all">
+          <div className="pl-3.5 pr-2 text-[#00f0ff] font-mono text-xs flex items-center gap-1.5 select-none">
+            <Terminal className="w-3.5 h-3.5" />
+            <span className="font-bold">&gt;</span>
+          </div>
+
           <input
             type="text"
             value={query}
             onChange={handleInputChange}
-            placeholder="Bạn muốn nghe bài gì? (Tên bài hát, ca sĩ...)"
+            placeholder="Nhập tên bài hát, nghệ sĩ hoặc từ khóa cần tìm..."
             autoFocus
-            className="w-full h-12 bg-mochy-card border border-mochy-border/80 rounded-xl pl-12 pr-12 text-sm text-white placeholder-mochy-subtext focus:outline-none focus:border-mochy-accent shadow-sm transition-colors"
+            className="w-full h-11 bg-transparent text-xs text-white placeholder-[#444c5c] font-mono focus:outline-none pr-12"
           />
+
           {!query && (
-            <div className="absolute right-4 pointer-events-none flex items-center gap-1 text-[11px] font-mono text-mochy-subtext border border-white/10 px-1.5 py-0.5 rounded bg-white/5">
-              <span>Ctrl</span>
-              <span>+</span>
-              <span>F</span>
+            <div className="absolute right-3 pointer-events-none flex items-center gap-1 text-[9px] font-mono text-[#8492a6] border border-[#242a35] px-1.5 py-0.5 rounded-xs bg-[#0d0f12]">
+              <span>CTRL+F</span>
             </div>
           )}
+
           {query && (
             <button
               type="button"
@@ -106,7 +110,7 @@ export const SearchView: React.FC<SearchViewProps> = ({ onAddToPlaylist }) => {
                 setResults([]);
                 setHasSearched(false);
               }}
-              className="absolute right-4 p-1 rounded-md text-mochy-muted hover:text-white"
+              className="absolute right-3 p-1 rounded-xs text-[#8492a6] hover:text-[#ff3366]"
             >
               <X className="w-4 h-4" />
             </button>
@@ -116,65 +120,67 @@ export const SearchView: React.FC<SearchViewProps> = ({ onAddToPlaylist }) => {
 
       {/* Quick Discovery Tags */}
       {!hasSearched && (
-        <div className="space-y-3">
-          <div className="flex items-center gap-2 text-xs font-semibold text-mochy-subtext uppercase tracking-wider">
-            <Sparkles className="w-3.5 h-3.5 text-mochy-accent" />
-            <span>Gợi ý tìm kiếm phổ biến</span>
+        <div className="space-y-2.5">
+          <div className="flex items-center gap-2 text-[10px] font-mono text-[#444c5c] uppercase tracking-wider">
+            <Sparkles className="w-3 h-3 text-[#00f0ff]" />
+            <span>// SUGGESTED_QUERIES</span>
           </div>
           <div className="flex flex-wrap gap-2">
             {QUICK_TAGS.map((tag) => (
               <button
                 key={tag}
                 onClick={() => handleTagClick(tag)}
-                className="px-3.5 py-1.5 rounded-lg bg-mochy-card border border-mochy-border/60 text-xs font-medium text-mochy-muted hover:text-white hover:bg-mochy-cardHover/80 hover:border-mochy-accent/40 transition-colors"
+                className="px-3 py-1.5 rounded-xs bg-[#13161c] border border-[#242a35] text-[11px] font-mono text-[#8492a6] hover:text-[#00f0ff] hover:border-[#00f0ff]/40 hover:bg-[#181c24] transition-all cursor-pointer shadow-sm"
               >
-                {tag}
+                [#{tag.replace(/\s+/g, "_")}]
               </button>
             ))}
           </div>
         </div>
       )}
 
-      {/* Loading State */}
+      {/* Search Results Area */}
       {loading && (
-        <div className="py-12 flex flex-col items-center justify-center text-center text-mochy-muted">
-          <Loader2 className="w-8 h-8 animate-spin text-mochy-accent mb-3" />
-          <span className="text-sm">Đang tìm kiếm bài hát trên YouTube Music...</span>
+        <div className="flex items-center justify-center py-16 gap-3 text-xs font-mono text-[#00f0ff]">
+          <Loader2 className="w-5 h-5 animate-spin" />
+          <span>QUERYING_INNERTUBE_STREAM_DATABASE...</span>
         </div>
       )}
 
-      {/* Search Results */}
-      {!loading && hasSearched && (
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <h3 className="text-base font-bold text-white tracking-tight">
-              Kết quả cho "{query}" ({results.length} bài)
-            </h3>
+      {!loading && hasSearched && results.length === 0 && (
+        <div className="text-center py-16 text-[#444c5c] font-mono text-xs">
+          <Music className="w-8 h-8 mx-auto mb-2 opacity-30" />
+          <p>// ZERO_RECORDS_FOUND: Thử lại với từ khóa khác</p>
+        </div>
+      )}
+
+      {!loading && results.length > 0 && (
+        <div className="space-y-2">
+          <div className="flex items-center justify-between border-b border-[#242a35] pb-2 text-[10px] font-mono text-[#8492a6]">
+            <span>// QUERY_OUTPUT: {results.length} KẾT QUẢ CHO "{query}"</span>
+            <span className="text-[#00ff9d]">STATUS: OK_200</span>
           </div>
 
-          {results.length > 0 ? (
-            <div className="divide-y divide-mochy-border/30">
-              {results.map((song, idx) => (
-                <SongRow
-                  key={song.id}
-                  song={song}
-                  index={idx}
-                  playlistContext={results}
-                  onAddToPlaylist={onAddToPlaylist}
-                />
-              ))}
-            </div>
-          ) : (
-            <div className="py-16 flex flex-col items-center justify-center text-center text-mochy-subtext">
-              <Music className="w-12 h-12 mb-3 opacity-40" />
-              <p className="text-sm font-medium text-mochy-muted">
-                Không tìm thấy bài hát nào phù hợp
-              </p>
-              <p className="text-xs text-mochy-subtext mt-1">
-                Hãy thử kiểm tra lại chính tả hoặc tìm theo tên ca sĩ khác.
-              </p>
-            </div>
-          )}
+          {/* Table Header Bar */}
+          <div className="flex items-center gap-3.5 px-3 py-1.5 text-[10px] font-mono text-[#444c5c] uppercase tracking-wider border-b border-[#242a35]/60">
+            <span className="w-7 text-center">#</span>
+            <span className="w-9" />
+            <span className="flex-1">Track / Artist</span>
+            <span className="w-12 text-right">Length</span>
+            <span className="w-20 text-right">Action</span>
+          </div>
+
+          <div className="space-y-1">
+            {results.map((song, idx) => (
+              <SongRow
+                key={song.id}
+                song={song}
+                index={idx}
+                playlistContext={results}
+                onAddToPlaylist={onAddToPlaylist}
+              />
+            ))}
+          </div>
         </div>
       )}
     </div>

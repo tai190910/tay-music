@@ -1,7 +1,7 @@
 // src/renderer/views/PlaylistDetailView.tsx
 
 import React, { useEffect, useState } from "react";
-import { ArrowLeft, Play, Trash2, ListMusic, Music } from "lucide-react";
+import { ArrowLeft, Play, Trash2, ListMusic } from "lucide-react";
 import type { Playlist, Song } from "../types.ts";
 import { SongRow } from "../components/SongRow.tsx";
 import { FixMatchModal } from "../components/FixMatchModal.tsx";
@@ -78,101 +78,118 @@ export const PlaylistDetailView: React.FC<PlaylistDetailViewProps> = ({
 
   if (!playlist && !loading) {
     return (
-      <div className="flex-1 p-8 select-none">
+      <div className="flex-1 p-6 select-none font-mono text-xs">
         <button
           onClick={onBack}
-          className="flex items-center gap-2 text-sm text-mochy-muted hover:text-white mb-6"
+          className="flex items-center gap-2 text-[#8492a6] hover:text-[#00f0ff] mb-6"
         >
-          <ArrowLeft className="w-4 h-4" /> Quay lại
+          <ArrowLeft className="w-3.5 h-3.5" /> [ &lt; QUAY LẠI ]
         </button>
-        <div className="py-20 text-center text-mochy-subtext">
-          <p>Không tìm thấy danh sách phát này.</p>
+        <div className="py-20 text-center text-[#444c5c]">
+          <p>// ERROR: 404_PLAYLIST_NOT_FOUND</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="flex-1 overflow-y-auto p-8 space-y-6 select-none">
+    <div className="flex-1 overflow-y-auto p-6 space-y-5 select-none font-sans">
       {/* Back button */}
       <button
         onClick={onBack}
-        className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-mochy-muted hover:text-white transition-colors"
+        className="flex items-center gap-2 text-[10px] font-mono text-[#8492a6] hover:text-[#00f0ff] transition-colors"
       >
-        <ArrowLeft className="w-4 h-4" /> Quay lại
+        <ArrowLeft className="w-3.5 h-3.5" />
+        <span>[ &lt; RETURN_TO_COLLECTION ]</span>
       </button>
 
-      {/* Playlist Header Banner */}
-      <div className="flex items-end gap-6 bg-mochy-card border border-mochy-border/60 rounded-2xl p-6">
-        <div className="w-40 h-40 rounded-xl bg-gradient-to-br from-neutral-800 to-mochy-bg border border-mochy-border flex items-center justify-center flex-shrink-0 shadow-lg">
-          <ListMusic className="w-16 h-16 text-mochy-accent" />
+      {/* Playlist Header Banner - Cyber RPG Style */}
+      <div className="relative flex flex-col sm:flex-row items-start sm:items-end gap-5 bg-[#13161c] border border-[#242a35] p-5 rounded-xs shadow-[0_4px_20px_rgba(0,0,0,0.4)]">
+        {/* Subtle corner notches */}
+        <div className="absolute top-0 right-0 w-2.5 h-2.5 border-t border-r border-[#00f0ff]" />
+        <div className="absolute bottom-0 left-0 w-2.5 h-2.5 border-b border-l border-[#00f0ff]" />
+
+        <div className="w-32 h-32 rounded-xs bg-[#0d0f12] border border-[#242a35] flex items-center justify-center flex-shrink-0 overflow-hidden shadow-md">
+          {playlist?.thumbnailUrl ? (
+            <img src={playlist.thumbnailUrl} alt={playlist.name} className="w-full h-full object-cover" />
+          ) : (
+            <ListMusic className="w-12 h-12 text-[#00f0ff]" />
+          )}
         </div>
 
         <div className="flex-1 min-w-0">
-          <span className="text-xs font-semibold text-mochy-accent uppercase tracking-wider">
-            Danh sách phát cá nhân
-          </span>
-          <h2 className="text-3xl font-extrabold text-white tracking-tight mt-1 truncate">
+          <div className="flex items-center gap-2 text-[10px] font-mono text-[#00ff9d] uppercase tracking-wider mb-1">
+            <span className="w-1.5 h-1.5 rounded-full bg-[#00ff9d] animate-pulse" />
+            <span>// PLAYLIST_DATA // SQLITE_LOCAL</span>
+          </div>
+
+          <h2 className="text-2xl font-black text-white tracking-tight truncate font-sans">
             {playlist?.name}
           </h2>
+
           {playlist?.description && (
-            <p className="text-sm text-mochy-muted mt-2 line-clamp-2">
+            <p className="text-xs text-[#8492a6] mt-1 line-clamp-2 font-mono">
               {playlist.description}
             </p>
           )}
-          <div className="flex items-center gap-4 text-xs font-mono text-mochy-subtext mt-4">
-            <span>{songs.length} bài hát</span>
+
+          <div className="flex items-center gap-3 text-[11px] font-mono text-[#444c5c] mt-3">
+            <span className="text-[#00f0ff] font-bold">[{songs.length} TRACKS]</span>
+            <span>•</span>
+            <span>ID: {playlistId.slice(0, 8)}...</span>
           </div>
         </div>
       </div>
 
       {/* Controls Bar */}
-      <div className="flex items-center justify-between py-2">
+      <div className="flex items-center justify-between border-b border-[#242a35] pb-3">
         <div className="flex items-center gap-3">
           <button
             onClick={handlePlayAll}
             disabled={songs.length === 0}
-            className="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-mochy-accent hover:bg-mochy-accentHover text-white font-semibold text-sm shadow-md transition-all active:scale-95 disabled:opacity-40"
+            className="flex items-center gap-2 px-4 py-2 rounded-xs bg-[#00f0ff] hover:bg-[#33f3ff] text-black font-mono font-bold text-xs shadow-[0_0_12px_rgba(0,240,255,0.35)] transition-all active:scale-95 disabled:opacity-40 cursor-pointer"
           >
-            <Play className="w-4 h-4 fill-white" />
-            <span>Phát tất cả</span>
+            <Play className="w-3.5 h-3.5 fill-black" />
+            <span>[ PHÁT TẤT CẢ ]</span>
           </button>
         </div>
 
         <button
           onClick={handleDeletePlaylist}
           title="Xóa danh sách phát"
-          className="p-2 rounded-lg text-rose-400 hover:text-rose-300 hover:bg-rose-950/40 transition-colors"
+          className="p-1.5 rounded-xs text-rose-400 hover:text-rose-300 hover:bg-rose-950/40 border border-transparent hover:border-rose-900/50 transition-colors"
         >
-          <Trash2 className="w-5 h-5" />
+          <Trash2 className="w-4 h-4" />
         </button>
       </div>
 
-      {/* Songs Table */}
-      <div className="space-y-2">
-        {songs.length > 0 ? (
-          <div className="divide-y divide-mochy-border/30">
-            {songs.map((song, idx) => (
-              <SongRow
-                key={`${song.id}-${idx}`}
-                song={song}
-                index={idx}
-                playlistContext={songs}
-                onAddToPlaylist={onAddToPlaylist}
-                onRemoveFromPlaylist={handleRemoveSong}
-                onFixMatch={(targetSong) => setFixMatchSong(targetSong)}
-                showRemoveOption={true}
-              />
-            ))}
+      {/* Song List */}
+      <div className="space-y-1">
+        <div className="flex items-center gap-3.5 px-3 py-1.5 text-[10px] font-mono text-[#444c5c] uppercase tracking-wider border-b border-[#242a35]/60">
+          <span className="w-7 text-center">#</span>
+          <span className="w-9" />
+          <span className="flex-1">Track / Artist</span>
+          <span className="w-12 text-right">Length</span>
+          <span className="w-20 text-right">Action</span>
+        </div>
+
+        {songs.length === 0 ? (
+          <div className="text-center py-16 text-[#444c5c] font-mono text-xs">
+            <p>// EMPTY_PLAYLIST: Chưa có bài hát nào trong danh sách</p>
           </div>
         ) : (
-          <div className="py-16 text-center text-mochy-subtext">
-            <Music className="w-10 h-10 mb-2 mx-auto opacity-30" />
-            <p className="text-sm font-medium text-mochy-muted">Chưa có bài hát nào trong playlist này</p>
-            <p className="text-xs text-mochy-subtext mt-1">
-              Tìm kiếm các bài hát yêu thích và nhấn dấu "+" để thêm vào danh sách này.
-            </p>
-          </div>
+          songs.map((song, idx) => (
+            <SongRow
+              key={`${song.id}-${idx}`}
+              song={song}
+              index={idx}
+              playlistContext={songs}
+              onAddToPlaylist={onAddToPlaylist}
+              onRemoveFromPlaylist={handleRemoveSong}
+              onFixMatch={(s) => setFixMatchSong(s)}
+              showRemoveOption={true}
+            />
+          ))
         )}
       </div>
 

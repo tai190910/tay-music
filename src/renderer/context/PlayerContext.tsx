@@ -1,7 +1,7 @@
 // src/renderer/context/PlayerContext.tsx
 
 import React, { createContext, useContext, useState, useEffect, useRef } from "react";
-import type { Song, LyricsData, RepeatMode } from "../types.ts";
+import type { Song, LyricsData, RepeatMode, StreamInfo } from "../types.ts";
 import { extractDominantColor, DEFAULT_COLOR, type ExtractedColor } from "../utils/colorExtractor.ts";
 
 interface PlayerContextType {
@@ -23,6 +23,7 @@ interface PlayerContextType {
   isQueueOpen: boolean;
   error: string | null;
   accentColor: ExtractedColor;
+  streamInfo: StreamInfo | null;
 
   playSong: (song: Song, newQueue?: Song[]) => Promise<void>;
   togglePlay: () => void;
@@ -62,6 +63,12 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const [isQueueOpen, setIsQueueOpen] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [accentColor, setAccentColor] = useState<ExtractedColor>(DEFAULT_COLOR);
+  const [streamInfo, setStreamInfo] = useState<StreamInfo | null>({
+    bitrate: 160,
+    codec: "OPUS",
+    client: "VISIONOS",
+    badgeText: "OPUS 160KBPS",
+  });
 
   // Dynamic dominant color extraction from current song thumbnail
   useEffect(() => {
@@ -298,6 +305,18 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     // 1. Fetch stream URL
     try {
       const playback = await window.mochyApi.getStream(cleanId, "HIGH");
+      if (playback?.format) {
+        const mime = playback.format.mimeType || "";
+        const codec = mime.includes("opus") ? "OPUS" : mime.includes("mp4a") ? "AAC" : "AUDIO";
+        const kbps = playback.format.bitrate ? Math.round(playback.format.bitrate / 1000) : 160;
+        setStreamInfo({
+          bitrate: kbps,
+          mimeType: mime,
+          client: playback.streamClient || "VISIONOS",
+          codec,
+          badgeText: `${codec} ${kbps}KBPS`,
+        });
+      }
       if (audioRef.current && playback?.streamUrl) {
         const audio = audioRef.current;
         console.log("[PlayerContext] Preparing audio playback:", {
@@ -499,6 +518,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         isQueueOpen,
         error,
         accentColor,
+        streamInfo,
 
         playSong,
         togglePlay,

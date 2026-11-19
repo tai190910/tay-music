@@ -1,7 +1,7 @@
 // src/renderer/views/LibraryView.tsx
 
 import React, { useState, useEffect } from "react";
-import { Heart, History, ListMusic, Plus, Trash2, Play, Disc } from "lucide-react";
+import { Heart, History, ListMusic, Plus, Trash2, Play, Disc, Terminal } from "lucide-react";
 import type { Song, Playlist, HistoryItem } from "../types.ts";
 import { SongRow } from "../components/SongRow.tsx";
 import { usePlayer } from "../context/PlayerContext.tsx";
@@ -71,77 +71,76 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
   };
 
   return (
-    <div className="flex-1 overflow-y-auto p-8 space-y-6 select-none">
-      {/* Library Navigation Tabs */}
-      <div className="flex items-center justify-between border-b border-mochy-border/60 pb-4">
-        <div className="flex items-center gap-3">
+    <div className="flex-1 overflow-y-auto p-6 space-y-5 select-none font-sans">
+      {/* Library Navigation Tabs - Cyber Style */}
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#242a35] pb-3">
+        <div className="flex items-center gap-2">
           <button
             onClick={() => setActiveTab("liked")}
-            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition-all ${
+            className={`flex items-center gap-2 px-3 py-1.5 rounded-xs text-xs font-mono transition-all border ${
               activeTab === "liked"
-                ? "bg-mochy-card text-white shadow-sm border border-mochy-border"
-                : "text-mochy-muted hover:text-white hover:bg-mochy-cardHover/50"
+                ? "bg-[#181c24] text-[#00f0ff] border-[#00f0ff]/50 shadow-[0_0_10px_rgba(0,240,255,0.15)] font-bold"
+                : "text-[#8492a6] hover:text-white hover:bg-[#181c24]/50 border-transparent"
             }`}
           >
-            <Heart className={`w-4 h-4 ${activeTab === "liked" ? "text-mochy-accent fill-mochy-accent" : ""}`} />
-            <span>Bài hát đã thích ({likedSongs.length})</span>
+            <Heart className={`w-3.5 h-3.5 ${activeTab === "liked" ? "text-rose-500 fill-rose-500" : ""}`} />
+            <span>[01] YÊU THÍCH ({likedSongs.length})</span>
           </button>
 
           <button
             onClick={() => setActiveTab("history")}
-            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition-all ${
+            className={`flex items-center gap-2 px-3 py-1.5 rounded-xs text-xs font-mono transition-all border ${
               activeTab === "history"
-                ? "bg-mochy-card text-white shadow-sm border border-mochy-border"
-                : "text-mochy-muted hover:text-white hover:bg-mochy-cardHover/50"
+                ? "bg-[#181c24] text-[#00f0ff] border-[#00f0ff]/50 shadow-[0_0_10px_rgba(0,240,255,0.15)] font-bold"
+                : "text-[#8492a6] hover:text-white hover:bg-[#181c24]/50 border-transparent"
             }`}
           >
-            <History className={`w-4 h-4 ${activeTab === "history" ? "text-mochy-accent" : ""}`} />
-            <span>Lịch sử nghe</span>
+            <History className="w-3.5 h-3.5" />
+            <span>[02] LỊCH SỬ</span>
           </button>
 
           <button
             onClick={() => setActiveTab("playlists")}
-            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition-all ${
+            className={`flex items-center gap-2 px-3 py-1.5 rounded-xs text-xs font-mono transition-all border ${
               activeTab === "playlists"
-                ? "bg-mochy-card text-white shadow-sm border border-mochy-border"
-                : "text-mochy-muted hover:text-white hover:bg-mochy-cardHover/50"
+                ? "bg-[#181c24] text-[#00f0ff] border-[#00f0ff]/50 shadow-[0_0_10px_rgba(0,240,255,0.15)] font-bold"
+                : "text-[#8492a6] hover:text-white hover:bg-[#181c24]/50 border-transparent"
             }`}
           >
-            <ListMusic className={`w-4 h-4 ${activeTab === "playlists" ? "text-mochy-accent" : ""}`} />
-            <span>Danh sách phát</span>
+            <ListMusic className="w-3.5 h-3.5" />
+            <span>[03] DANH SÁCH PHÁT ({playlists.length})</span>
           </button>
         </div>
 
+        {/* Action Buttons */}
         <div className="flex items-center gap-2">
           {onOpenSpotifyImport && (
             <button
               onClick={onOpenSpotifyImport}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#1DB954]/20 hover:bg-[#1DB954]/30 text-[#1DB954] border border-[#1DB954]/40 text-xs font-semibold shadow-sm transition-all"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xs bg-[#14231b] hover:bg-[#183024] text-[#00ff9d] border border-[#00ff9d]/30 text-xs font-mono font-medium shadow-[0_0_8px_rgba(0,255,157,0.1)] transition-all"
             >
-              <svg className="w-3.5 h-3.5 fill-current" viewBox="0 0 24 24">
-                <path d="M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.299.421-1.02.599-1.559.3z" />
-              </svg>
-              <span>Nhập từ Spotify</span>
+              <Terminal className="w-3.5 h-3.5" />
+              <span>[UPLINK SPOTIFY]</span>
             </button>
           )}
 
           {activeTab === "playlists" && (
             <button
               onClick={onOpenCreatePlaylist}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-mochy-accent hover:bg-mochy-accentHover text-white text-xs font-semibold shadow-sm transition-colors"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xs bg-[#00f0ff] hover:bg-[#33f3ff] text-black text-xs font-mono font-bold shadow-[0_0_10px_rgba(0,240,255,0.3)] transition-all cursor-pointer"
             >
               <Plus className="w-3.5 h-3.5" />
-              <span>Tạo danh sách phát</span>
+              <span>[+ PLAYLIST MỚI]</span>
             </button>
           )}
 
           {activeTab === "history" && historyItems.length > 0 && (
             <button
               onClick={handleClearHistory}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-rose-400 hover:text-rose-300 hover:bg-rose-950/40 text-xs font-semibold transition-colors"
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xs bg-rose-950/20 hover:bg-rose-950/40 text-rose-400 border border-rose-900/40 text-xs font-mono transition-all"
             >
               <Trash2 className="w-3.5 h-3.5" />
-              <span>Xóa lịch sử</span>
+              <span>[XÓA LOGS]</span>
             </button>
           )}
         </div>
@@ -149,21 +148,38 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
 
       {/* Tab 1: Liked Songs */}
       {activeTab === "liked" && (
-        <div className="space-y-4">
+        <div className="space-y-3">
           {likedSongs.length > 0 && (
-            <div className="flex items-center gap-4">
-              <button
-                onClick={handlePlayAllLiked}
-                className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-mochy-accent hover:bg-mochy-accentHover text-white font-semibold text-sm shadow-md transition-all active:scale-95"
-              >
-                <Play className="w-4 h-4 fill-white" />
-                <span>Phát tất cả</span>
-              </button>
+            <div className="flex items-center justify-between bg-[#13161c] border border-[#242a35] p-3 rounded-xs">
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={handlePlayAllLiked}
+                  className="px-3 py-1.5 rounded-xs bg-[#00f0ff] hover:bg-[#33f3ff] text-black font-mono font-bold text-xs flex items-center gap-1.5 shadow-[0_0_10px_rgba(0,240,255,0.3)] transition-all active:scale-95"
+                >
+                  <Play className="w-3.5 h-3.5 fill-black" />
+                  <span>PHÁT TẤT CẢ</span>
+                </button>
+                <span className="text-[11px] font-mono text-[#8492a6]">
+                  // TOTAL: {likedSongs.length} BÀI HÁT TRONG KHO YÊU THÍCH
+                </span>
+              </div>
             </div>
           )}
 
-          {likedSongs.length > 0 ? (
-            <div className="divide-y divide-mochy-border/30">
+          {likedSongs.length === 0 ? (
+            <div className="text-center py-20 text-[#444c5c] font-mono text-xs">
+              <Heart className="w-10 h-10 mx-auto mb-2 opacity-25" />
+              <p>// EMPTY_SET: Chưa có bài hát nào được gắn cờ yêu thích</p>
+            </div>
+          ) : (
+            <div className="space-y-1">
+              <div className="flex items-center gap-3.5 px-3 py-1.5 text-[10px] font-mono text-[#444c5c] uppercase tracking-wider border-b border-[#242a35]/60">
+                <span className="w-7 text-center">#</span>
+                <span className="w-9" />
+                <span className="flex-1">Track / Artist</span>
+                <span className="w-12 text-right">Length</span>
+                <span className="w-20 text-right">Action</span>
+              </div>
               {likedSongs.map((song, idx) => (
                 <SongRow
                   key={song.id}
@@ -174,23 +190,27 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
                 />
               ))}
             </div>
-          ) : (
-            <div className="py-16 text-center text-mochy-subtext">
-              <Heart className="w-12 h-12 mb-3 mx-auto opacity-30" />
-              <p className="text-sm font-medium text-mochy-muted">Chưa có bài hát yêu thích nào</p>
-              <p className="text-xs text-mochy-subtext mt-1">
-                Nhấn biểu tượng trái tim khi nghe một bài hát để lưu vào đây.
-              </p>
-            </div>
           )}
         </div>
       )}
 
-      {/* Tab 2: History */}
+      {/* Tab 2: Listening History */}
       {activeTab === "history" && (
-        <div className="space-y-4">
-          {historyItems.length > 0 ? (
-            <div className="divide-y divide-mochy-border/30">
+        <div className="space-y-3">
+          {historyItems.length === 0 ? (
+            <div className="text-center py-20 text-[#444c5c] font-mono text-xs">
+              <History className="w-10 h-10 mx-auto mb-2 opacity-25" />
+              <p>// EMPTY_LOGS: Chưa ghi nhận lịch sử phát</p>
+            </div>
+          ) : (
+            <div className="space-y-1">
+              <div className="flex items-center gap-3.5 px-3 py-1.5 text-[10px] font-mono text-[#444c5c] uppercase tracking-wider border-b border-[#242a35]/60">
+                <span className="w-7 text-center">#</span>
+                <span className="w-9" />
+                <span className="flex-1">Track / Artist</span>
+                <span className="w-12 text-right">Length</span>
+                <span className="w-20 text-right">Action</span>
+              </div>
               {historyItems
                 .filter((item) => {
                   const vid = item.song?.id || (item.song as any)?.videoId || item.songId;
@@ -199,11 +219,12 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
                 .map((item, idx) => {
                   const validId = (item.song?.id || (item.song as any)?.videoId || item.songId).trim();
                   const song: Song = {
-                    ...(item.song || {}),
                     id: validId,
                     videoId: validId,
-                    title: item.song?.title || "Bài hát đã lưu",
-                    artists: item.song?.artists?.length ? item.song.artists : [{ name: "Nghệ sĩ" }],
+                    title: item.song?.title || "Unknown Track",
+                    artists: item.song?.artists?.length ? item.song.artists : [{ name: "Unknown" }],
+                    thumbnail: item.song?.thumbnail || (item.song as any)?.thumbnailUrl,
+                    duration: item.song?.duration,
                   };
                   return (
                     <SongRow
@@ -215,53 +236,51 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
                   );
                 })}
             </div>
-          ) : (
-            <div className="py-16 text-center text-mochy-subtext">
-              <History className="w-12 h-12 mb-3 mx-auto opacity-30" />
-              <p className="text-sm font-medium text-mochy-muted">Chưa có lịch sử nghe nhạc</p>
-              <p className="text-xs text-mochy-subtext mt-1">
-                Các bài hát bạn phát sẽ được tự động ghi lại tại đây.
-              </p>
-            </div>
           )}
         </div>
       )}
 
-      {/* Tab 3: Playlists */}
+      {/* Tab 3: Playlists Grid */}
       {activeTab === "playlists" && (
-        <div className="space-y-4">
-          {playlists.length > 0 ? (
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-              {playlists.map((pl) => (
+        <div className="space-y-3">
+          {playlists.length === 0 ? (
+            <div className="text-center py-20 text-[#444c5c] font-mono text-xs">
+              <ListMusic className="w-10 h-10 mx-auto mb-2 opacity-25" />
+              <p>// ZERO_PLAYLISTS: Chưa có playlist nào được tạo</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
+              {playlists.map((pl, idx) => (
                 <div
                   key={pl.id}
                   onClick={() => onSelectPlaylist(pl.id)}
-                  className="group p-4 rounded-xl bg-mochy-card border border-mochy-border/60 hover:bg-mochy-cardHover/80 transition-all cursor-pointer flex flex-col justify-between"
+                  className="group p-3 rounded-xs bg-[#13161c] border border-[#242a35] hover:border-[#00f0ff]/50 hover:bg-[#181c24] transition-all cursor-pointer flex flex-col relative shadow-[0_2px_10px_rgba(0,0,0,0.3)]"
                 >
-                  <div className="w-full aspect-square rounded-lg bg-mochy-sidebar flex items-center justify-center mb-3 shadow-inner">
-                    <ListMusic className="w-12 h-12 text-mochy-subtext group-hover:text-mochy-accent transition-colors" />
+                  <div className="relative w-full aspect-square rounded-xs overflow-hidden bg-[#0d0f12] mb-2.5 flex-shrink-0 border border-[#242a35] flex items-center justify-center">
+                    {pl.thumbnailUrl ? (
+                      <img
+                        src={pl.thumbnailUrl}
+                        alt={pl.name}
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                      />
+                    ) : (
+                      <ListMusic className="w-8 h-8 text-[#444c5c] group-hover:text-[#00f0ff] transition-colors" />
+                    )}
                   </div>
-                  <div>
-                    <h4 className="text-sm font-bold text-white truncate" title={pl.name}>
-                      {pl.name}
-                    </h4>
-                    <p className="text-xs text-mochy-muted mt-0.5 line-clamp-1">
-                      {pl.description || "Danh sách phát cá nhân"}
-                    </p>
-                    <span className="text-[11px] font-mono text-mochy-subtext mt-2 block">
-                      {pl.songCount || 0} bài hát
-                    </span>
+
+                  <div className="flex items-center justify-between text-[10px] font-mono text-[#444c5c] mb-1">
+                    <span>#{String(idx + 1).padStart(2, "0")}</span>
+                    <span className="text-[#00ff9d]">{pl.songCount || 0} TRK</span>
                   </div>
+
+                  <p className="text-xs font-bold text-white truncate font-sans" title={pl.name}>
+                    {pl.name}
+                  </p>
+                  <p className="text-[11px] text-[#8492a6] truncate font-mono mt-0.5">
+                    {pl.description || "// USER_COLLECTION"}
+                  </p>
                 </div>
               ))}
-            </div>
-          ) : (
-            <div className="py-16 text-center text-mochy-subtext">
-              <ListMusic className="w-12 h-12 mb-3 mx-auto opacity-30" />
-              <p className="text-sm font-medium text-mochy-muted">Chưa có danh sách phát nào</p>
-              <p className="text-xs text-mochy-subtext mt-1">
-                Nhấn "+ Tạo danh sách phát" để tạo danh sách tuyển chọn của riêng bạn.
-              </p>
             </div>
           )}
         </div>

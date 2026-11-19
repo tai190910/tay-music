@@ -1,7 +1,7 @@
 // src/renderer/components/FixMatchModal.tsx
 
 import React, { useEffect, useState } from "react";
-import { X, Search, Check, RefreshCw, Music2, ExternalLink, Disc } from "lucide-react";
+import { X, Search, Check, RefreshCw, Disc, Terminal } from "lucide-react";
 import type { Song } from "../types.ts";
 
 interface FixMatchModalProps {
@@ -82,184 +82,154 @@ export const FixMatchModal: React.FC<FixMatchModalProps> = ({
     if (!sec || sec <= 0) return "--:--";
     const m = Math.floor(sec / 60);
     const s = Math.floor(sec % 60);
-    return `${m}:${s.toString().padStart(2, "0")}`;
+    return `${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-fade-in select-none">
-      <div className="bg-[#18181b] border border-white/10 rounded-2xl w-full max-w-2xl overflow-hidden shadow-2xl flex flex-col max-h-[85vh]">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-md bg-black/80 animate-fadeIn select-none font-sans">
+      <div className="relative bg-[#13161c] border border-[#242a35] rounded-xs w-full max-w-2xl overflow-hidden shadow-[0_0_35px_rgba(0,0,0,0.8)] flex flex-col max-h-[85vh]">
+        {/* Subtle corner notches */}
+        <div className="absolute top-0 left-0 w-2.5 h-2.5 border-t border-l border-[#00f0ff]" />
+        <div className="absolute top-0 right-0 w-2.5 h-2.5 border-t border-r border-[#00f0ff]" />
+        <div className="absolute bottom-0 left-0 w-2.5 h-2.5 border-b border-l border-[#00f0ff]" />
+        <div className="absolute bottom-0 right-0 w-2.5 h-2.5 border-b border-r border-[#00f0ff]" />
+
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-white/10">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-mochy-accent/20 flex items-center justify-center text-mochy-accent">
-              <RefreshCw className="w-5 h-5" />
-            </div>
+        <div className="flex items-center justify-between px-5 py-3.5 border-b border-[#242a35] bg-[#101217]">
+          <div className="flex items-center gap-2.5">
+            <RefreshCw className="w-4 h-4 text-[#00f0ff]" />
             <div>
-              <h3 className="text-base font-bold text-white">Đổi phiên bản bài hát</h3>
-              <p className="text-xs text-mochy-muted">
-                Chọn phiên bản khớp chuẩn nhất trên YouTube Music để thay thế
+              <h3 className="text-xs font-mono font-bold text-white uppercase tracking-wider">
+                // FIX_TRACK_MATCH // YT_RESOLVER
+              </h3>
+              <p className="text-[10px] font-mono text-[#8492a6]">
+                Chọn bản thu khớp chuẩn nhất trên YouTube Music để ghi đè vào SQLite
               </p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 rounded-lg text-mochy-muted hover:text-white hover:bg-white/5 transition-colors"
+            className="p-1 rounded-xs text-[#8492a6] hover:text-white hover:bg-[#181c24] border border-transparent hover:border-[#242a35] transition-colors"
           >
-            <X className="w-5 h-5" />
+            <X className="w-4 h-4" />
           </button>
         </div>
 
         {/* Current Song Reference */}
-        <div className="px-6 py-3 bg-white/[0.02] border-b border-white/5 flex items-center justify-between text-xs">
+        <div className="px-5 py-2.5 bg-[#0d0f12] border-b border-[#242a35] flex items-center justify-between text-xs font-mono">
           <div className="flex items-center gap-2 truncate pr-4">
-            <span className="text-mochy-subtext">Bài hiện tại:</span>
-            <span className="font-semibold text-white truncate">{song.title}</span>
-            <span className="text-mochy-muted truncate">— {song.artists.map((a) => a.name).join(", ")}</span>
+            <span className="text-[#444c5c]">// TARGET:</span>
+            <span className="font-bold text-white truncate font-sans">{song.title}</span>
+            <span className="text-[#8492a6] truncate">— {song.artists.map((a) => a.name).join(", ")}</span>
           </div>
-          <span className="font-mono text-mochy-subtext flex-shrink-0">
-            {formatSec(song.duration)}
+          <span className="text-[#00f0ff] font-bold flex-shrink-0">
+            [{formatSec(song.duration)}]
           </span>
         </div>
 
         {/* Search Bar */}
-        <div className="p-4 border-b border-white/5">
+        <div className="p-3.5 border-b border-[#242a35] bg-[#13161c]">
           <form onSubmit={handleSearchSubmit} className="flex gap-2">
-            <div className="relative flex-1">
-              <Search className="w-4 h-4 text-mochy-muted absolute left-3 top-1/2 -translate-y-1/2" />
+            <div className="relative flex-1 bg-[#181c24] border border-[#242a35] rounded-xs flex items-center px-2.5">
+              <Search className="w-3.5 h-3.5 text-[#444c5c] mr-2" />
               <input
                 type="text"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder="Nhập tên bài hát hoặc ca sĩ để tìm kiếm lại..."
-                className="w-full pl-9 pr-3 py-2 bg-mochy-bg border border-white/10 rounded-xl text-sm text-white placeholder-mochy-subtext focus:outline-none focus:border-mochy-accent"
+                placeholder="Nhập tên bài hát hoặc ca sĩ để tìm kiếm ứng cử viên khác..."
+                className="w-full py-1.5 bg-transparent text-xs text-white placeholder-[#444c5c] font-mono focus:outline-none"
               />
             </div>
             <button
               type="submit"
               disabled={loading}
-              className="px-4 py-2 bg-white/10 hover:bg-white/15 text-white rounded-xl text-xs font-semibold transition-colors disabled:opacity-50 flex items-center gap-1.5"
+              className="px-3.5 py-1.5 bg-[#00f0ff] hover:bg-[#33f3ff] text-black rounded-xs text-xs font-mono font-bold transition-all disabled:opacity-40 flex items-center gap-1.5 shadow-[0_0_8px_rgba(0,240,255,0.3)] cursor-pointer"
             >
               <Search className="w-3.5 h-3.5" />
-              <span>Tìm lại</span>
+              <span>[ TÌM ]</span>
             </button>
           </form>
         </div>
 
         {/* Candidates List */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-2">
+        <div className="flex-1 overflow-y-auto p-3.5 space-y-2">
           {loading ? (
-            <div className="py-12 flex flex-col items-center justify-center text-mochy-muted gap-3">
-              <RefreshCw className="w-6 h-6 animate-spin text-mochy-accent" />
-              <p className="text-xs">Đang tìm các phiên bản bài hát trên YouTube...</p>
+            <div className="py-16 text-center text-xs font-mono text-[#00f0ff] flex items-center justify-center gap-2">
+              <RefreshCw className="w-4 h-4 animate-spin" />
+              <span>SEARCHING_YOUTUBE_CANDIDATES...</span>
             </div>
           ) : error ? (
-            <div className="py-8 text-center text-rose-400 text-xs">
-              <p>{error}</p>
+            <div className="py-12 text-center text-rose-400 font-mono text-xs">
+              <p>// ERROR: {error}</p>
             </div>
           ) : candidates.length === 0 ? (
-            <div className="py-12 text-center text-mochy-subtext text-xs">
-              <Music2 className="w-8 h-8 mx-auto mb-2 opacity-30" />
-              <p>Không tìm thấy kết quả phù hợp trên YouTube.</p>
-              <p className="mt-1">Hãy thử chỉnh sửa từ khóa ở thanh tìm kiếm phía trên.</p>
+            <div className="py-12 text-center text-[#444c5c] font-mono text-xs">
+              <p>// ZERO_MATCHES: Không tìm thấy ứng cử viên phù hợp</p>
             </div>
           ) : (
             candidates.map(({ song: cand, score }) => {
-              const candDuration = cand.duration || 0;
-              const durationDiff =
-                song.duration && candDuration ? Math.abs(song.duration - candDuration) : null;
-              const isCurrentMatch = cand.id === song.id;
-              const scorePercent = Math.round(score * 100);
-              const isTopic =
-                cand.artists?.some((a: any) => a.name.toLowerCase().includes("- topic")) ||
-                (cand.author && cand.author.toLowerCase().includes("- topic"));
+              const deltaSec =
+                cand.duration && song.duration
+                  ? Math.round(cand.duration - song.duration)
+                  : null;
+              const isCloseDuration = deltaSec !== null && Math.abs(deltaSec) <= 4;
+              const isReplacing = replacingId === cand.id;
 
               return (
                 <div
                   key={cand.id}
-                  className={`flex items-center justify-between p-3 rounded-xl border transition-all ${
-                    isCurrentMatch
-                      ? "bg-mochy-accent/10 border-mochy-accent/40"
-                      : "bg-white/[0.02] border-white/5 hover:bg-white/[0.06] hover:border-white/15"
+                  onClick={() => handleSelectCandidate(cand)}
+                  className={`p-2.5 rounded-xs border transition-all cursor-pointer flex items-center gap-3 ${
+                    isReplacing
+                      ? "bg-[#181c24] border-[#00f0ff] text-white"
+                      : "bg-[#13161c] border-[#242a35] hover:border-[#00f0ff]/50 hover:bg-[#181c24] text-[#8492a6] hover:text-white"
                   }`}
                 >
-                  {/* Thumbnail & Info */}
-                  <div className="flex items-center gap-3 min-w-0 flex-1 pr-3">
-                    <div className="w-11 h-11 rounded-lg overflow-hidden bg-mochy-card flex-shrink-0 border border-white/10">
-                      {cand.thumbnail ? (
-                        <img
-                          src={cand.thumbnail}
-                          alt={cand.title}
-                          className="w-full h-full object-cover"
-                        />
-                      ) : (
-                        <div className="w-full h-full flex items-center justify-center">
-                          <Disc className="w-5 h-5 text-mochy-subtext" />
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-semibold text-white truncate">
-                          {cand.title}
-                        </span>
-                        {isTopic && (
-                          <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30 flex-shrink-0">
-                            Topic
-                          </span>
-                        )}
-                        {scorePercent >= 80 && (
-                          <span className="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 flex-shrink-0">
-                            {scorePercent}%
-                          </span>
-                        )}
+                  <div className="w-10 h-10 rounded-xs overflow-hidden bg-[#0d0f12] border border-[#242a35] flex-shrink-0">
+                    {cand.thumbnail ? (
+                      <img src={cand.thumbnail} alt={cand.title} className="w-full h-full object-cover" />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center">
+                        <Disc className="w-5 h-5 text-[#444c5c]" />
                       </div>
-
-                      <div className="flex items-center gap-3 text-xs text-mochy-muted mt-0.5 truncate">
-                        <span className="truncate">
-                          {cand.artists?.map((a: any) => a.name).join(", ") || cand.author || "YouTube"}
-                        </span>
-                        <span className="font-mono text-mochy-subtext flex-shrink-0">
-                          {formatSec(candDuration)}
-                        </span>
-                        {durationDiff !== null && (
-                          <span
-                            className={`font-mono text-[11px] flex-shrink-0 ${
-                              durationDiff <= 4
-                                ? "text-emerald-400"
-                                : durationDiff <= 10
-                                ? "text-amber-400"
-                                : "text-rose-400"
-                            }`}
-                          >
-                            (±{durationDiff}s)
-                          </span>
-                        )}
-                      </div>
-                    </div>
+                    )}
                   </div>
 
-                  {/* Action Button */}
-                  <div className="flex-shrink-0">
-                    {isCurrentMatch ? (
-                      <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-mochy-accent bg-mochy-accent/15 border border-mochy-accent/30">
-                        <Check className="w-3.5 h-3.5" />
-                        Đang chọn
-                      </span>
-                    ) : (
-                      <button
-                        onClick={() => handleSelectCandidate(cand)}
-                        disabled={replacingId !== null}
-                        className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold text-white bg-mochy-accent hover:bg-mochy-accentHover shadow-sm transition-all active:scale-95 disabled:opacity-50"
+                  <div className="flex-1 min-w-0 pr-2">
+                    <p className="text-xs font-bold text-white truncate font-sans">
+                      {cand.title}
+                    </p>
+                    <p className="text-[11px] text-[#8492a6] truncate font-mono">
+                      {cand.artists?.map((a: any) => a.name).join(", ")}
+                    </p>
+                  </div>
+
+                  {/* Telemetry badges */}
+                  <div className="flex items-center gap-2 flex-shrink-0 font-mono text-[10px]">
+                    <span className="text-[#8492a6]">{formatSec(cand.duration)}</span>
+
+                    {deltaSec !== null && (
+                      <span
+                        className={`px-1.5 py-0.5 rounded-xs font-bold border ${
+                          isCloseDuration
+                            ? "bg-[#14231b] text-[#00ff9d] border-[#00ff9d]/30"
+                            : "bg-amber-950/30 text-amber-400 border-amber-900/30"
+                        }`}
                       >
-                        {replacingId === cand.id ? (
-                          <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                        ) : (
-                          <Check className="w-3.5 h-3.5" />
-                        )}
-                        <span>Chọn</span>
-                      </button>
+                        {deltaSec >= 0 ? `+${deltaSec}s` : `${deltaSec}s`}
+                      </span>
                     )}
+
+                    <span className="text-[#00f0ff] font-bold">
+                      [{Math.round(score * 100)}%]
+                    </span>
+
+                    <button
+                      disabled={isReplacing}
+                      className="px-2.5 py-1 rounded-xs bg-[#181c24] hover:bg-[#00f0ff] hover:text-black border border-[#242a35] hover:border-[#00f0ff] text-white font-mono text-xs transition-all"
+                    >
+                      {isReplacing ? "..." : "[ CHỌN ]"}
+                    </button>
                   </div>
                 </div>
               );

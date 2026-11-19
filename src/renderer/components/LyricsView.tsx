@@ -1,8 +1,15 @@
 // src/renderer/components/LyricsView.tsx
 
 import React, { useEffect, useRef } from "react";
-import { X, Mic2, Music, Disc } from "lucide-react";
+import { X, Mic2, Disc, Terminal, Activity } from "lucide-react";
 import { usePlayer } from "../context/PlayerContext.tsx";
+
+function formatMsToLrc(ms: number): string {
+  const totalSec = Math.floor(ms / 1000);
+  const m = Math.floor(totalSec / 60);
+  const s = totalSec % 60;
+  return `${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
+}
 
 export const LyricsView: React.FC = () => {
   const {
@@ -12,7 +19,6 @@ export const LyricsView: React.FC = () => {
     seek,
     setIsLyricsOpen,
     isPlaying,
-    accentColor,
   } = usePlayer();
 
   const activeLineRef = useRef<HTMLDivElement | null>(null);
@@ -33,128 +39,83 @@ export const LyricsView: React.FC = () => {
   const lines = lyricsData?.parsed?.lines || [];
 
   return (
-    <div
-      className="absolute inset-0 z-20 flex flex-col select-none overflow-hidden animate-fadeIn"
-      style={{
-        background: `radial-gradient(circle at 25% 30%, rgba(${accentColor.rgbString}, 0.22) 0%, rgba(13, 14, 21, 0.96) 65%, #07080c 100%)`,
-      }}
-    >
-      {/* Top Header Bar */}
-      <div className="h-16 px-8 flex items-center justify-between border-b border-white/5 flex-shrink-0 relative z-20">
+    <div className="absolute inset-0 z-30 flex flex-col select-none overflow-hidden animate-fadeIn backdrop-blur-md bg-[#0d0f12]/92 font-sans border border-[#242a35]">
+      {/* Top Header Bar - Cyber Telemetry Style */}
+      <div className="h-12 px-6 flex items-center justify-between border-b border-[#242a35] bg-[#101217] flex-shrink-0 relative z-20">
         <div className="flex items-center gap-3">
-          <div
-            className="p-1.5 rounded-lg border border-white/10"
-            style={{ backgroundColor: `rgba(${accentColor.rgbString}, 0.15)` }}
-          >
-            <Mic2 className="w-4 h-4" style={{ color: accentColor.hex }} />
+          <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-xs bg-[#181c24] border border-[#00f0ff]/40 text-[#00f0ff] text-[10px] font-mono font-bold">
+            <Mic2 className="w-3 h-3 text-[#00f0ff]" />
+            <span>// TELEMETRY: KARAOKE_HUD</span>
           </div>
-          <div>
-            <span className="text-sm font-bold text-white tracking-wide uppercase">
-              Tày Music • Lời bài hát
-            </span>
-          </div>
+
           {lyricsData?.provider && (
-            <span className="text-[10px] font-mono font-medium px-2 py-0.5 rounded bg-white/5 text-neutral-300 border border-white/10">
-              Nguồn: {lyricsData.provider.toUpperCase()}
+            <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-xs bg-[#14231b] text-[#00ff9d] border border-[#00ff9d]/30">
+              PROVIDER: {lyricsData.provider.toUpperCase()}
             </span>
           )}
+
+          <div className="hidden sm:flex items-center gap-1.5 text-[10px] font-mono text-[#444c5c]">
+            <span className="w-1.5 h-1.5 rounded-full bg-[#00ff9d] animate-pulse" />
+            <span>SYNC: MILLISECOND_EXACT</span>
+          </div>
         </div>
 
         <button
           onClick={() => setIsLyricsOpen(false)}
           title="Đóng giao diện lời bài hát (Esc)"
-          className="p-2 rounded-full text-neutral-400 hover:text-white hover:bg-white/10 transition-colors"
+          className="px-2.5 py-1 rounded-xs bg-[#181c24] hover:bg-[#242a35] border border-[#242a35] text-[#8492a6] hover:text-white font-mono text-xs flex items-center gap-1.5 transition-all cursor-pointer"
         >
-          <X className="w-5 h-5" />
+          <X className="w-3.5 h-3.5" />
+          <span>[ESC / CLOSE]</span>
         </button>
       </div>
 
       {/* Main Split Body: Left Info / Right Lyrics */}
       <div className="flex-1 flex overflow-hidden relative z-10">
-        {/* Left Side: Spinning Vinyl Record + Album Cover & Audio Wave Visualizer */}
-        <div className="w-5/12 p-8 flex flex-col justify-center items-center text-center border-r border-white/5 relative z-10">
-          <div className="relative flex items-center justify-center">
-            {/* Spinning Vinyl Record behind artwork */}
-            <div
-              className={`w-64 h-64 rounded-full bg-gradient-to-br from-neutral-900 via-black to-neutral-900 border-4 border-neutral-800 shadow-2xl absolute flex items-center justify-center transition-all duration-700 ${
-                isPlaying ? "translate-x-12 rotate-45" : "translate-x-0"
-              }`}
-              style={{
-                boxShadow: `0 10px 40px -10px rgba(${accentColor.rgbString}, 0.35)`,
-              }}
-            >
-              {/* Vinyl grooves */}
-              <div className="w-56 h-56 rounded-full border border-neutral-700/30 flex items-center justify-center">
-                <div className="w-48 h-48 rounded-full border border-neutral-700/20 flex items-center justify-center">
-                  <div className="w-36 h-36 rounded-full border border-neutral-700/30 flex items-center justify-center">
-                    {/* Vinyl Center Label */}
-                    <div
-                      className="w-20 h-20 rounded-full overflow-hidden border-2 border-neutral-600 shadow-inner relative flex items-center justify-center animate-vinyl"
-                      style={{
-                        animationPlayState: isPlaying ? "running" : "paused",
-                      }}
-                    >
-                      {currentSong.thumbnail ? (
-                        <img
-                          src={currentSong.thumbnail}
-                          alt="Vinyl Center"
-                          className="w-full h-full object-cover"
-                        />
-                      ) : (
-                        <Disc className="w-10 h-10 text-neutral-400" />
-                      )}
-                      {/* Spindle hole */}
-                      <div className="w-3.5 h-3.5 rounded-full bg-neutral-900 border border-neutral-500 absolute" />
-                    </div>
-                  </div>
-                </div>
+        {/* Left Side: Artwork & Equalizer Bar */}
+        <div className="w-5/12 p-8 flex flex-col justify-center items-center text-center border-r border-[#242a35] relative z-10 bg-[#0d0f12]/50">
+          {/* Album Cover with Cyber Border */}
+          <div className="relative w-56 h-56 rounded-xs overflow-hidden bg-[#181c24] border border-[#242a35] shadow-[0_0_20px_rgba(0,0,0,0.6)] flex-shrink-0 group">
+            {currentSong.thumbnail ? (
+              <img
+                src={currentSong.thumbnail}
+                alt={currentSong.title}
+                className="w-full h-full object-cover"
+              />
+            ) : (
+              <div className="w-full h-full flex items-center justify-center bg-[#181c24]">
+                <Disc className="w-16 h-16 text-[#444c5c]" />
               </div>
-            </div>
-
-            {/* Front Square Album Cover */}
-            <div className="w-64 h-64 rounded-2xl overflow-hidden shadow-2xl border border-white/10 bg-neutral-900 flex-shrink-0 relative z-10 group">
-              {currentSong.thumbnail ? (
-                <img
-                  src={currentSong.thumbnail}
-                  alt={currentSong.title}
-                  className="w-full h-full object-cover"
-                />
-              ) : (
-                <div className="w-full h-full flex items-center justify-center bg-neutral-800">
-                  <Music className="w-20 h-20 text-neutral-500" />
-                </div>
-              )}
-            </div>
+            )}
+            {/* Corner Bracket Accents */}
+            <div className="absolute top-0 left-0 w-3 h-3 border-t-2 border-l-2 border-[#00f0ff]" />
+            <div className="absolute top-0 right-0 w-3 h-3 border-t-2 border-r-2 border-[#00f0ff]" />
+            <div className="absolute bottom-0 left-0 w-3 h-3 border-b-2 border-l-2 border-[#00f0ff]" />
+            <div className="absolute bottom-0 right-0 w-3 h-3 border-b-2 border-r-2 border-[#00f0ff]" />
           </div>
 
           {/* Song Metadata */}
-          <div className="mt-8 max-w-sm">
-            <h2 className="text-2xl font-black text-white tracking-tight line-clamp-2 drop-shadow-md">
+          <div className="mt-6 max-w-sm">
+            <h2 className="text-xl font-bold text-white tracking-tight line-clamp-2">
               {currentSong.title}
             </h2>
-            <p className="text-sm font-semibold text-neutral-300 mt-1.5">
+            <p className="text-xs font-mono text-[#00f0ff] mt-1 font-semibold">
               {currentSong.artists.map((a) => a.name).join(", ")}
             </p>
-            {currentSong.album?.name && (
-              <div className="flex items-center justify-center gap-1.5 text-xs text-neutral-400 mt-2 font-medium">
-                <Disc className="w-3.5 h-3.5" />
-                <span className="truncate">{currentSong.album.name}</span>
-              </div>
-            )}
 
-            {/* Real-time simulated Audio Wave Visualizer */}
-            <div className="flex items-end justify-center gap-1.5 h-6 mt-5">
-              {[0.35, 0.9, 0.6, 1.0, 0.75, 0.85, 0.45, 0.7].map((scale, i) => (
+            {/* Audio Wave Visualizer */}
+            <div className="flex items-end justify-center gap-1 h-5 mt-4">
+              {[0.4, 0.9, 0.6, 1.0, 0.75, 0.85, 0.5, 0.7, 0.95, 0.35].map((scale, i) => (
                 <span
                   key={i}
-                  className="w-1 rounded-full transition-all duration-300"
+                  className="w-1 rounded-xs transition-all duration-300"
                   style={{
-                    backgroundColor: accentColor.hex,
+                    backgroundColor: i % 2 === 0 ? "#00f0ff" : "#00ff9d",
                     height: isPlaying ? `${Math.max(20, scale * 100)}%` : "20%",
                     animation: isPlaying
-                      ? `visualizerBounce ${0.8 + (i % 4) * 0.2}s ease-in-out infinite alternate`
+                      ? `visualizerBounce ${0.6 + (i % 4) * 0.15}s ease-in-out infinite alternate`
                       : "none",
-                    animationDelay: `${i * 0.12}s`,
+                    animationDelay: `${i * 0.1}s`,
                   }}
                 />
               ))}
@@ -162,10 +123,10 @@ export const LyricsView: React.FC = () => {
           </div>
         </div>
 
-        {/* Right Side: Flowing Karaoke Lyrics */}
+        {/* Right Side: Flowing Karaoke Lyrics with Timestamp Tags */}
         <div
           ref={containerRef}
-          className="w-7/12 h-full overflow-y-auto px-12 py-36 space-y-6 scroll-smooth relative z-10"
+          className="w-7/12 h-full overflow-y-auto px-8 py-32 space-y-4 scroll-smooth relative z-10"
         >
           {lines.length > 0 ? (
             lines.map((line, idx) => {
@@ -177,34 +138,38 @@ export const LyricsView: React.FC = () => {
                   key={`${line.time}-${idx}`}
                   ref={isActive ? activeLineRef : null}
                   onClick={() => seek(line.time / 1000)}
-                  className={`cursor-pointer transition-all duration-300 py-2.5 px-4 rounded-xl flex items-center gap-3 select-text group ${
+                  className={`cursor-pointer transition-all duration-200 py-2 px-3 rounded-xs flex items-center gap-3 select-text group border ${
                     isActive
-                      ? "text-white font-black text-3xl tracking-tight opacity-100 scale-[1.03] origin-left bg-white/5 shadow-sm"
+                      ? "text-[#00f0ff] font-bold text-2xl tracking-tight bg-[#181c24] border-[#00f0ff]/40 shadow-[0_0_15px_rgba(0,240,255,0.1)] font-sans"
                       : isPast
-                      ? "text-neutral-400/80 text-xl font-medium hover:text-white/90 hover:opacity-100"
-                      : "text-neutral-500/60 text-xl font-medium hover:text-white/80 hover:opacity-90"
+                      ? "text-[#8492a6] text-lg font-medium border-transparent hover:text-white hover:bg-[#181c24]/50"
+                      : "text-[#444c5c] text-lg font-medium border-transparent hover:text-[#8492a6] hover:bg-[#181c24]/30"
                   }`}
-                  title="Nhấp để phát từ đoạn này"
+                  title="Nhấp để tua đến câu hát này"
                 >
-                  {/* Active Line Accent Pill */}
-                  {isActive && (
-                    <span
-                      className="w-1.5 h-8 rounded-full flex-shrink-0 animate-pulse"
-                      style={{ backgroundColor: accentColor.hex }}
-                    />
-                  )}
+                  {/* Monospace Timestamp Pill */}
+                  <span
+                    className={`text-[10px] font-mono px-1.5 py-0.5 rounded-xs flex-shrink-0 ${
+                      isActive
+                        ? "bg-[#00f0ff] text-black font-bold"
+                        : "bg-[#181c24] text-[#444c5c] border border-[#242a35]"
+                    }`}
+                  >
+                    {formatMsToLrc(line.time)}
+                  </span>
+
                   <span className="leading-snug">{line.text}</span>
                 </div>
               );
             })
           ) : (
-            <div className="h-full flex flex-col items-center justify-center text-center text-neutral-400 py-20">
-              <Mic2 className="w-14 h-14 mb-4 opacity-40 animate-pulse text-white" />
-              <p className="text-xl font-bold text-white">
-                {lyricsData ? "Không tìm thấy lời bài hát" : "Đang tìm kiếm lời bài hát..."}
+            <div className="h-full flex flex-col items-center justify-center text-center text-[#8492a6] py-16 font-mono text-xs">
+              <Mic2 className="w-10 h-10 mb-3 opacity-30 text-[#00f0ff] animate-pulse" />
+              <p className="text-sm font-bold text-white">
+                {lyricsData ? "// 404_LYRICS_NOT_FOUND" : "// FETCHING_LYRICS_STREAM..."}
               </p>
-              <p className="text-xs text-neutral-400 mt-2 max-w-sm leading-relaxed">
-                Lời bài hát được tự động truy vấn từ hệ thống LrcLib, NetEase và KuGou.
+              <p className="text-[11px] text-[#444c5c] mt-1 max-w-sm">
+                Tự động tìm kiếm qua LrcLib, KuGou và NetEase
               </p>
             </div>
           )}

@@ -253,25 +253,31 @@ export const SpotifyImportModal: React.FC<SpotifyImportModalProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4 select-none animate-fadeIn">
-      <div className="w-full max-w-2xl bg-mochy-card border border-mochy-border rounded-2xl shadow-2xl flex flex-col max-h-[85vh] overflow-hidden text-white">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-4 select-none animate-fadeIn font-sans">
+      <div className="relative w-full max-w-2xl bg-[#13161c] border border-[#242a35] rounded-xs shadow-[0_0_40px_rgba(0,0,0,0.85)] flex flex-col max-h-[85vh] overflow-hidden text-[#e2e8f0]">
+        {/* Corner Accents */}
+        <div className="absolute top-0 left-0 w-2.5 h-2.5 border-t border-l border-[#00ff9d]" />
+        <div className="absolute top-0 right-0 w-2.5 h-2.5 border-t border-r border-[#00ff9d]" />
+        <div className="absolute bottom-0 left-0 w-2.5 h-2.5 border-b border-l border-[#00ff9d]" />
+        <div className="absolute bottom-0 right-0 w-2.5 h-2.5 border-b border-r border-[#00ff9d]" />
+
         {/* Header */}
-        <div className="p-6 border-b border-mochy-border/60 flex items-center justify-between bg-gradient-to-r from-emerald-950/30 to-mochy-card">
+        <div className="p-4 border-b border-[#242a35] flex items-center justify-between bg-[#101217]">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-[#1DB954] flex items-center justify-center shadow-lg shadow-emerald-950/50">
-              <svg className="w-6 h-6 text-black fill-current" viewBox="0 0 24 24">
+            <div className="w-8 h-8 rounded-xs bg-[#14231b] border border-[#00ff9d]/40 flex items-center justify-center shadow-[0_0_10px_rgba(0,255,157,0.2)]">
+              <svg className="w-4 h-4 text-[#00ff9d] fill-current" viewBox="0 0 24 24">
                 <path d="M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.299.421-1.02.599-1.559.3z" />
               </svg>
             </div>
             <div>
-              <h2 className="text-xl font-bold text-white tracking-tight flex items-center gap-2">
-                Nhập nhạc từ Spotify
-                <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded-full bg-[#1DB954]/20 text-[#1DB954] border border-[#1DB954]/30">
-                  Auto-Sync
+              <h2 className="text-sm font-bold text-white tracking-wider font-mono flex items-center gap-2">
+                // SPOTIFY_UPLINK
+                <span className="text-[9px] uppercase font-bold px-1.5 py-0.5 rounded-xs bg-[#14231b] text-[#00ff9d] border border-[#00ff9d]/30">
+                  AUTO-SYNC
                 </span>
               </h2>
-              <p className="text-xs text-mochy-subtext">
-                Tự động tìm kiếm & đối soát link audio tốt nhất trên YouTube Music
+              <p className="text-[10px] text-[#8492a6] font-mono">
+                Đồng bộ danh sách phát & đối soát link audio trên YouTube Music
               </p>
             </div>
           </div>
@@ -279,40 +285,40 @@ export const SpotifyImportModal: React.FC<SpotifyImportModalProps> = ({
           <button
             onClick={onClose}
             disabled={isImporting}
-            className="p-1.5 rounded-lg text-mochy-muted hover:text-white hover:bg-mochy-cardHover transition-colors disabled:opacity-40"
+            className="p-1 rounded-xs text-[#8492a6] hover:text-white hover:bg-[#181c24] border border-transparent hover:border-[#242a35] transition-colors disabled:opacity-40"
           >
-            <X className="w-5 h-5" />
+            <X className="w-4 h-4" />
           </button>
         </div>
 
         {/* Tab Navigation */}
-        <div className="flex border-b border-mochy-border/60 bg-mochy-sidebar/40 px-6 pt-3 gap-6">
+        <div className="flex border-b border-[#242a35] bg-[#0d0f12] px-5 pt-2 gap-4">
           <button
             onClick={() => setActiveTab("link")}
             disabled={isImporting}
-            className={`flex items-center gap-2 pb-3 font-semibold text-sm transition-all border-b-2 ${
+            className={`flex items-center gap-2 pb-2 font-mono font-semibold text-xs transition-all border-b-2 ${
               activeTab === "link"
-                ? "border-[#1DB954] text-[#1DB954]"
-                : "border-transparent text-mochy-muted hover:text-white"
+                ? "border-[#00ff9d] text-[#00ff9d]"
+                : "border-transparent text-[#8492a6] hover:text-white"
             }`}
           >
-            <Link2 className="w-4 h-4" />
-            <span>Dán link công khai</span>
+            <Link2 className="w-3.5 h-3.5" />
+            <span>[01] LINK CÔNG KHAI</span>
           </button>
 
           <button
             onClick={() => setActiveTab("account")}
             disabled={isImporting}
-            className={`flex items-center gap-2 pb-3 font-semibold text-sm transition-all border-b-2 ${
+            className={`flex items-center gap-2 pb-2 font-mono font-semibold text-xs transition-all border-b-2 ${
               activeTab === "account"
-                ? "border-[#1DB954] text-[#1DB954]"
-                : "border-transparent text-mochy-muted hover:text-white"
+                ? "border-[#00ff9d] text-[#00ff9d]"
+                : "border-transparent text-[#8492a6] hover:text-white"
             }`}
           >
-            <User className="w-4 h-4" />
-            <span>Tài khoản Spotify</span>
+            <User className="w-3.5 h-3.5" />
+            <span>[02] TÀI KHOẢN SPOTIFY</span>
             {account && (
-              <span className="w-2 h-2 rounded-full bg-[#1DB954]" title="Đã đăng nhập" />
+              <span className="w-1.5 h-1.5 rounded-full bg-[#00ff9d]" title="Đã đăng nhập" />
             )}
           </button>
         </div>
@@ -321,49 +327,49 @@ export const SpotifyImportModal: React.FC<SpotifyImportModalProps> = ({
         <div className="p-6 overflow-y-auto flex-1 space-y-6">
           {/* Active Progress View */}
           {isImporting && progress && (
-            <div className="p-5 rounded-2xl bg-mochy-sidebar border border-[#1DB954]/40 shadow-xl space-y-4 animate-fadeIn">
+            <div className="p-4 rounded-xs bg-[#101217] border border-[#00ff9d]/40 shadow-xl space-y-3 animate-fadeIn font-mono">
               <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2.5">
-                  <Loader2 className="w-5 h-5 text-[#1DB954] animate-spin" />
-                  <span className="font-semibold text-sm text-white">
-                    {progress.phase === "fetching" && "Đang tải danh sách bài hát..."}
-                    {progress.phase === "matching" && "Đang đối soát bài hát trên YouTube Music..."}
-                    {progress.phase === "saving" && "Đang lưu vào cơ sở dữ liệu..."}
-                    {progress.phase === "done" && "Hoàn tất!"}
+                <div className="flex items-center gap-2">
+                  <Loader2 className="w-4 h-4 text-[#00ff9d] animate-spin" />
+                  <span className="font-bold text-xs text-white">
+                    {progress.phase === "fetching" && "// FETCHING_SPOTIFY_TRACKLIST..."}
+                    {progress.phase === "matching" && "// RESOLVING_YOUTUBE_TRACKS..."}
+                    {progress.phase === "saving" && "// WRITING_TO_SQLITE_DATABASE..."}
+                    {progress.phase === "done" && "// IMPORT_COMPLETED"}
                   </span>
                 </div>
-                <span className="text-xs font-bold text-[#1DB954]">
-                  {progress.total > 0
+                <span className="text-xs font-bold text-[#00ff9d]">
+                  [{progress.total > 0
                     ? `${Math.round((progress.current / progress.total) * 100)}%`
-                    : "0%"}
+                    : "0%"}]
                 </span>
               </div>
 
-              {/* Progress bar */}
-              <div className="w-full bg-mochy-card h-2.5 rounded-full overflow-hidden border border-mochy-border/60">
+              {/* RPG Progress Gauge */}
+              <div className="w-full bg-[#181c24] h-2 rounded-xs overflow-hidden border border-[#242a35]">
                 <div
-                  className="bg-gradient-to-r from-emerald-500 to-[#1DB954] h-full rounded-full transition-all duration-300"
+                  className="bg-gradient-to-r from-[#00ff9d] to-[#00f0ff] h-full rounded-xs transition-all duration-300"
                   style={{
                     width: `${progress.total > 0 ? (progress.current / progress.total) * 100 : 0}%`,
                   }}
                 />
               </div>
 
-              <div className="flex items-center justify-between text-xs text-mochy-subtext">
+              <div className="flex items-center justify-between text-[11px] text-[#8492a6]">
                 <span className="truncate max-w-[360px]" title={progress.currentTrack}>
-                  {progress.currentTrack ? `Đang xử lý: ${progress.currentTrack}` : "Đang chuẩn bị..."}
+                  {progress.currentTrack ? `&gt; ${progress.currentTrack}` : "// PREPARING..."}
                 </span>
                 <span>
-                  Khớp: <strong className="text-white">{progress.matched}</strong> / {progress.total}
+                  MATCHED: <strong className="text-white">{progress.matched}</strong> / {progress.total}
                 </span>
               </div>
 
-              <div className="flex justify-end pt-2">
+              <div className="flex justify-end pt-1">
                 <button
                   onClick={handleCancelImport}
-                  className="px-4 py-1.5 rounded-lg text-xs font-semibold bg-rose-950/40 hover:bg-rose-900/60 text-rose-300 border border-rose-800/40 transition-colors"
+                  className="px-3 py-1 rounded-xs text-xs font-mono bg-rose-950/40 hover:bg-rose-900/60 text-rose-300 border border-rose-800/40 transition-colors"
                 >
-                  Hủy tiến trình
+                  [ HỦY TIẾN TRÌNH ]
                 </button>
               </div>
             </div>

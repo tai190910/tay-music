@@ -7,9 +7,9 @@ export interface ExtractedColor {
 }
 
 export const DEFAULT_COLOR: ExtractedColor = {
-  hex: "#f43f5e",
-  rgb: [244, 63, 94],
-  rgbString: "244, 63, 94",
+  hex: "#00f0ff",
+  rgb: [0, 240, 255],
+  rgbString: "0, 240, 255",
 };
 
 /**

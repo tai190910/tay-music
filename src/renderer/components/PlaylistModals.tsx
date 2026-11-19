@@ -39,64 +39,72 @@ export const CreatePlaylistModal: React.FC<CreatePlaylistModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 animate-fadeIn">
-      <div className="w-full max-w-md bg-mochy-sidebar border border-mochy-border rounded-xl p-6 shadow-2xl">
-        <div className="flex items-center justify-between mb-4">
+    <div className="fixed inset-0 z-50 flex items-center justify-center backdrop-blur-md bg-black/80 animate-fadeIn font-sans p-4">
+      <div className="relative w-full max-w-md bg-[#13161c] border border-[#242a35] rounded-xs p-5 shadow-[0_0_30px_rgba(0,0,0,0.7)]">
+        {/* Subtle corner notches */}
+        <div className="absolute top-0 left-0 w-2 h-2 border-t border-l border-[#00f0ff]" />
+        <div className="absolute top-0 right-0 w-2 h-2 border-t border-r border-[#00f0ff]" />
+        <div className="absolute bottom-0 left-0 w-2 h-2 border-b border-l border-[#00f0ff]" />
+        <div className="absolute bottom-0 right-0 w-2 h-2 border-b border-r border-[#00f0ff]" />
+
+        <div className="flex items-center justify-between pb-3 border-b border-[#242a35] mb-4">
           <div className="flex items-center gap-2">
-            <FolderPlus className="w-5 h-5 text-mochy-accent" />
-            <h3 className="text-base font-bold text-white">Tạo danh sách phát mới</h3>
+            <FolderPlus className="w-4 h-4 text-[#00f0ff]" />
+            <h3 className="text-xs font-mono font-bold text-white uppercase tracking-wider">
+              // CREATE_NEW_PLAYLIST
+            </h3>
           </div>
           <button
             onClick={onClose}
-            className="p-1 rounded-md text-mochy-muted hover:text-white hover:bg-mochy-cardHover"
+            className="p-1 rounded-xs text-[#8492a6] hover:text-white hover:bg-[#181c24] border border-transparent hover:border-[#242a35] transition-all"
           >
-            <X className="w-5 h-5" />
+            <X className="w-4 h-4" />
           </button>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="block text-xs font-semibold text-mochy-subtext uppercase tracking-wider mb-1.5">
-              Tên danh sách phát *
+            <label className="block text-[10px] font-mono font-semibold text-[#8492a6] uppercase tracking-wider mb-1.5">
+              &gt; TÊN PLAYLIST *
             </label>
             <input
               type="text"
               required
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="Ví dụ: Nhạc học tập, Chill cuối tuần..."
-              className="w-full bg-mochy-card border border-mochy-border rounded-lg px-3 py-2 text-sm text-white placeholder-mochy-subtext focus:outline-none focus:border-mochy-accent"
+              placeholder="Nhập tên danh sách phát..."
+              className="w-full bg-[#181c24] border border-[#242a35] focus:border-[#00f0ff]/60 rounded-xs px-3 py-2 text-xs text-white placeholder-[#444c5c] font-mono focus:outline-none transition-colors"
               autoFocus
             />
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-mochy-subtext uppercase tracking-wider mb-1.5">
-              Mô tả (tùy chọn)
+            <label className="block text-[10px] font-mono font-semibold text-[#8492a6] uppercase tracking-wider mb-1.5">
+              &gt; MÔ TẢ (TÙY CHỌN)
             </label>
             <textarea
               rows={3}
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              placeholder="Thêm mô tả về playlist này..."
-              className="w-full bg-mochy-card border border-mochy-border rounded-lg px-3 py-2 text-sm text-white placeholder-mochy-subtext focus:outline-none focus:border-mochy-accent resize-none"
+              placeholder="Thêm ghi chú mô tả..."
+              className="w-full bg-[#181c24] border border-[#242a35] focus:border-[#00f0ff]/60 rounded-xs px-3 py-2 text-xs text-white placeholder-[#444c5c] font-mono focus:outline-none resize-none transition-colors"
             />
           </div>
 
-          <div className="flex items-center justify-end gap-3 pt-2">
+          <div className="flex items-center justify-end gap-2.5 pt-2">
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 text-sm font-medium text-mochy-muted hover:text-white rounded-lg hover:bg-mochy-card transition-colors"
+              className="px-3.5 py-1.5 text-xs font-mono text-[#8492a6] hover:text-white rounded-xs hover:bg-[#181c24] transition-colors"
             >
-              Hủy
+              [ HỦY ]
             </button>
             <button
               type="submit"
               disabled={loading || !name.trim()}
-              className="px-5 py-2 text-sm font-semibold bg-mochy-accent hover:bg-mochy-accentHover text-white rounded-lg transition-colors disabled:opacity-50"
+              className="px-4 py-1.5 text-xs font-mono font-bold bg-[#00f0ff] hover:bg-[#33f3ff] text-black rounded-xs transition-all shadow-[0_0_10px_rgba(0,240,255,0.3)] disabled:opacity-40 cursor-pointer active:scale-95"
             >
-              {loading ? "Đang tạo..." : "Tạo playlist"}
+              {loading ? "[ ĐANG TẠO... ]" : "[ TẠO PLAYLIST ]"}
             </button>
           </div>
         </form>
@@ -142,29 +150,37 @@ export const AddToPlaylistModal: React.FC<AddToPlaylistModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 animate-fadeIn">
-      <div className="w-full max-w-sm bg-mochy-sidebar border border-mochy-border rounded-xl p-5 shadow-2xl">
-        <div className="flex items-center justify-between mb-3">
+    <div className="fixed inset-0 z-50 flex items-center justify-center backdrop-blur-md bg-black/80 animate-fadeIn font-sans p-4">
+      <div className="relative w-full max-w-sm bg-[#13161c] border border-[#242a35] rounded-xs p-5 shadow-[0_0_30px_rgba(0,0,0,0.7)]">
+        {/* Subtle corner notches */}
+        <div className="absolute top-0 left-0 w-2 h-2 border-t border-l border-[#00f0ff]" />
+        <div className="absolute top-0 right-0 w-2 h-2 border-t border-r border-[#00f0ff]" />
+        <div className="absolute bottom-0 left-0 w-2 h-2 border-b border-l border-[#00f0ff]" />
+        <div className="absolute bottom-0 right-0 w-2 h-2 border-b border-r border-[#00f0ff]" />
+
+        <div className="flex items-center justify-between pb-3 border-b border-[#242a35] mb-3">
           <div className="flex items-center gap-2">
-            <ListPlus className="w-5 h-5 text-mochy-accent" />
-            <h3 className="text-sm font-bold text-white">Thêm vào Playlist</h3>
+            <ListPlus className="w-4 h-4 text-[#00f0ff]" />
+            <h3 className="text-xs font-mono font-bold text-white uppercase tracking-wider">
+              // TARGET_PLAYLIST
+            </h3>
           </div>
           <button
             onClick={onClose}
-            className="p-1 rounded-md text-mochy-muted hover:text-white hover:bg-mochy-cardHover"
+            className="p-1 rounded-xs text-[#8492a6] hover:text-white hover:bg-[#181c24] border border-transparent hover:border-[#242a35] transition-all"
           >
             <X className="w-4 h-4" />
           </button>
         </div>
 
-        <p className="text-xs text-mochy-muted truncate mb-3">
-          Chọn playlist để thêm bài <strong className="text-white">"{song.title}"</strong>:
+        <p className="text-[11px] text-[#8492a6] font-mono truncate mb-3">
+          &gt; BÀI HÁT: <strong className="text-white font-sans">"{song.title}"</strong>
         </p>
 
         <div className="max-h-60 overflow-y-auto space-y-1 my-2">
           {playlists.length === 0 ? (
-            <p className="text-xs text-mochy-subtext italic py-4 text-center">
-              Chưa có playlist nào. Hãy tạo playlist mới trước!
+            <p className="text-xs text-[#444c5c] font-mono italic py-4 text-center">
+              // ZERO_PLAYLISTS: Hãy tạo playlist mới trước
             </p>
           ) : (
             playlists.map((pl) => (
@@ -172,11 +188,11 @@ export const AddToPlaylistModal: React.FC<AddToPlaylistModalProps> = ({
                 key={pl.id}
                 onClick={() => handleSelectPlaylist(pl.id)}
                 disabled={loading}
-                className="w-full flex items-center justify-between px-3 py-2 rounded-lg text-sm text-left hover:bg-mochy-card text-mochy-muted hover:text-white transition-colors"
+                className="w-full flex items-center justify-between px-3 py-2 rounded-xs text-xs text-left hover:bg-[#181c24] text-[#8492a6] hover:text-white border border-transparent hover:border-[#242a35] transition-all"
               >
                 <span className="truncate font-medium">{pl.name}</span>
-                <span className="text-[11px] text-mochy-subtext font-mono">
-                  {pl.songCount || 0} bài
+                <span className="text-[10px] text-[#444c5c] font-mono">
+                  {pl.songCount || 0} TRK
                 </span>
               </button>
             ))

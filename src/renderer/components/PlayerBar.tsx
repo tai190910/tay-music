@@ -15,14 +15,16 @@ import {
   ListMusic,
   Heart,
   Loader2,
+  Disc,
+  Activity,
 } from "lucide-react";
 import { usePlayer } from "../context/PlayerContext.tsx";
 
 function formatSeconds(sec: number): string {
-  if (isNaN(sec) || sec < 0) return "0:00";
+  if (isNaN(sec) || sec < 0) return "00:00";
   const m = Math.floor(sec / 60);
   const s = Math.floor(sec % 60);
-  return `${m}:${s.toString().padStart(2, "0")}`;
+  return `${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
 }
 
 export const PlayerBar: React.FC = () => {
@@ -39,7 +41,7 @@ export const PlayerBar: React.FC = () => {
     isLoadingStream,
     isLyricsOpen,
     isQueueOpen,
-    accentColor,
+    streamInfo,
     togglePlay,
     nextSong,
     prevSong,
@@ -66,21 +68,15 @@ export const PlayerBar: React.FC = () => {
   };
 
   return (
-    <footer
-      className="h-22 border-t px-4 py-2 flex items-center justify-between select-none z-30 flex-shrink-0 transition-colors duration-700"
-      style={{
-        backgroundColor: "#0c0d13",
-        borderTopColor: `rgba(${accentColor.rgbString}, 0.22)`,
-        boxShadow: `0 -4px 24px -6px rgba(${accentColor.rgbString}, 0.15)`,
-      }}
-    >
-      {/* 1. Left Section: Song Info & Like */}
-      <div className="flex items-center gap-3 w-1/4 min-w-[200px]">
+    <footer className="h-22 bg-[#101217] border-t border-[#242a35] px-4 py-2.5 flex items-center justify-between select-none z-30 flex-shrink-0 relative shadow-[0_-4px_20px_rgba(0,0,0,0.5)] font-sans">
+      {/* 1. Left Section: RPG Character Card / Song Info */}
+      <div className="flex items-center gap-3 w-1/4 min-w-[220px]">
         {currentSong ? (
           <>
+            {/* Square Album Cover with 1px Cyber Border */}
             <div
               onClick={() => setIsLyricsOpen((prev) => !prev)}
-              className="relative w-12 h-12 rounded-lg overflow-hidden bg-mochy-card border border-mochy-border/60 flex-shrink-0 cursor-pointer group shadow-sm"
+              className="relative w-12 h-12 rounded-sm overflow-hidden bg-[#181c24] border border-[#242a35] hover:border-[#00f0ff]/70 flex-shrink-0 cursor-pointer group shadow-[0_0_8px_rgba(0,0,0,0.4)] transition-all"
               title="Nhấn để xem lời bài hát"
             >
               {currentSong.thumbnail ? (
@@ -90,90 +86,81 @@ export const PlayerBar: React.FC = () => {
                   className="w-full h-full object-cover group-hover:scale-105 transition-transform"
                 />
               ) : (
-                <div className="w-full h-full flex items-center justify-center bg-mochy-card">
-                  <Mic2 className="w-5 h-5 text-mochy-subtext" />
+                <div className="w-full h-full flex items-center justify-center bg-[#181c24]">
+                  <Disc className="w-5 h-5 text-[#444c5c]" />
                 </div>
               )}
+              {/* Corner highlight indicator */}
+              <div className="absolute top-0 right-0 w-2 h-2 border-t border-r border-[#00f0ff]/60" />
             </div>
 
             <div className="flex flex-col min-w-0 pr-2">
               <div className="flex items-center gap-1.5">
                 <span
                   onClick={() => setIsLyricsOpen((prev) => !prev)}
-                  className="text-sm font-semibold text-white truncate cursor-pointer hover:underline"
+                  className="text-xs font-bold text-white truncate cursor-pointer hover:text-[#00f0ff] transition-colors"
                   title={currentSong.title}
                 >
                   {currentSong.title}
                 </span>
 
-                {/* Animated mini sound wave when playing */}
+                {/* Cyber Audio Waveform Indicator */}
                 {isPlaying && (
-                  <div className="flex items-end gap-0.5 h-3 flex-shrink-0">
-                    <span
-                      className="w-0.5 rounded-full transition-all duration-300"
-                      style={{
-                        backgroundColor: accentColor.hex,
-                        height: "100%",
-                        animation: "visualizerBounce 0.6s ease-in-out infinite alternate",
-                      }}
-                    />
-                    <span
-                      className="w-0.5 rounded-full transition-all duration-300"
-                      style={{
-                        backgroundColor: accentColor.hex,
-                        height: "60%",
-                        animation: "visualizerBounce 0.8s ease-in-out infinite alternate",
-                        animationDelay: "0.15s",
-                      }}
-                    />
-                    <span
-                      className="w-0.5 rounded-full transition-all duration-300"
-                      style={{
-                        backgroundColor: accentColor.hex,
-                        height: "80%",
-                        animation: "visualizerBounce 0.5s ease-in-out infinite alternate",
-                        animationDelay: "0.3s",
-                      }}
-                    />
+                  <div className="flex items-end gap-0.5 h-3 flex-shrink-0" title="Audio Stream Active">
+                    <span className="w-0.5 bg-[#00ff9d] rounded-full animate-visualizer-1 h-full" />
+                    <span className="w-0.5 bg-[#00f0ff] rounded-full animate-visualizer-2 h-full" />
+                    <span className="w-0.5 bg-[#00ff9d] rounded-full animate-visualizer-3 h-full" />
                   </div>
                 )}
               </div>
-              <span className="text-xs text-mochy-muted truncate">
-                {currentSong.artists.map((a) => a.name).join(", ") || "Nghệ sĩ chưa rõ"}
-              </span>
+
+              <div className="flex items-center gap-2 mt-0.5">
+                <span className="text-[11px] text-[#8492a6] truncate">
+                  {currentSong.artists.map((a) => a.name).join(", ") || "Unknown Artist"}
+                </span>
+                <span className="text-[9px] font-mono text-[#00ff9d] bg-[#00ff9d]/10 px-1 rounded-xs border border-[#00ff9d]/30 font-semibold">
+                  LIVE
+                </span>
+              </div>
             </div>
 
             <button
               onClick={toggleLikeCurrent}
               title={isLiked ? "Bỏ thích" : "Yêu thích"}
-              className="p-1.5 rounded-full text-mochy-muted hover:text-white hover:bg-mochy-cardHover transition-colors flex-shrink-0"
+              className="p-1.5 rounded-sm text-[#8492a6] hover:text-[#00f0ff] hover:bg-[#181c24] border border-transparent hover:border-[#242a35] transition-all flex-shrink-0 ml-auto"
             >
               <Heart
-                className="w-5 h-5 transition-transform active:scale-125"
+                className="w-4 h-4 transition-transform active:scale-125"
                 style={{
-                  color: isLiked ? accentColor.hex : undefined,
-                  fill: isLiked ? accentColor.hex : "transparent",
+                  color: isLiked ? "#ff3366" : undefined,
+                  fill: isLiked ? "#ff3366" : "transparent",
                 }}
               />
             </button>
           </>
         ) : (
-          <div className="text-xs text-mochy-subtext italic">Chưa phát bài hát nào</div>
+          <div className="flex items-center gap-2 text-[11px] font-mono text-[#444c5c]">
+            <Activity className="w-4 h-4 opacity-40" />
+            <span>// AUDIO_CORE: STANDBY</span>
+          </div>
         )}
       </div>
 
-      {/* 2. Center Section: Playback Controls & Progress Bar */}
+      {/* 2. Center Section: RPG HUD Resource Gauge & Controls */}
       <div className="flex flex-col items-center justify-center max-w-xl w-2/4 px-4">
-        {/* Buttons */}
-        <div className="flex items-center gap-4 mb-1">
+        {/* Cyber Buttons Row */}
+        <div className="flex items-center gap-3 mb-1.5">
           {/* Shuffle */}
           <button
             onClick={toggleShuffle}
             title={isShuffle ? "Tắt trộn bài" : "Bật trộn bài"}
-            className="p-1.5 rounded-md transition-colors"
-            style={{ color: isShuffle ? accentColor.hex : undefined }}
+            className={`p-1.5 rounded-sm transition-all border ${
+              isShuffle
+                ? "bg-[#181c24] text-[#00f0ff] border-[#00f0ff]/50 shadow-[0_0_8px_rgba(0,240,255,0.2)]"
+                : "text-[#8492a6] hover:text-white border-transparent hover:bg-[#181c24]"
+            }`}
           >
-            <Shuffle className="w-4 h-4" />
+            <Shuffle className="w-3.5 h-3.5" />
           </button>
 
           {/* Previous */}
@@ -181,28 +168,24 @@ export const PlayerBar: React.FC = () => {
             onClick={prevSong}
             title="Bài trước"
             disabled={!currentSong}
-            className="p-1.5 rounded-md text-mochy-muted hover:text-white transition-colors disabled:opacity-40 disabled:hover:text-mochy-muted"
+            className="p-1.5 rounded-sm text-[#8492a6] hover:text-white transition-all disabled:opacity-30 border border-transparent hover:border-[#242a35] hover:bg-[#181c24]"
           >
-            <SkipBack className="w-5 h-5" />
+            <SkipBack className="w-4 h-4" />
           </button>
 
-          {/* Play / Pause / Loading */}
+          {/* Play / Pause with Cyber Neon Ring */}
           <button
             onClick={togglePlay}
             disabled={!currentSong && !isLoadingStream}
             title={isPlaying ? "Tạm dừng" : "Phát"}
-            className="w-10 h-10 rounded-full flex items-center justify-center hover:scale-105 active:scale-95 transition-all shadow-md disabled:opacity-40 text-black font-bold"
-            style={{
-              backgroundColor: accentColor.hex,
-              boxShadow: isPlaying ? `0 0 18px rgba(${accentColor.rgbString}, 0.5)` : undefined,
-            }}
+            className="w-9 h-9 rounded-sm bg-[#00f0ff] text-black hover:bg-[#33f3ff] active:scale-95 transition-all shadow-[0_0_14px_rgba(0,240,255,0.45)] flex items-center justify-center disabled:opacity-40 disabled:shadow-none font-bold cursor-pointer"
           >
             {isLoadingStream ? (
-              <Loader2 className="w-5 h-5 animate-spin text-black" />
+              <Loader2 className="w-4 h-4 animate-spin text-black" />
             ) : isPlaying ? (
-              <Pause className="w-5 h-5 fill-black" />
+              <Pause className="w-4 h-4 fill-black" />
             ) : (
-              <Play className="w-5 h-5 fill-black ml-0.5" />
+              <Play className="w-4 h-4 fill-black ml-0.5" />
             )}
           </button>
 
@@ -211,9 +194,9 @@ export const PlayerBar: React.FC = () => {
             onClick={nextSong}
             title="Bài tiếp theo"
             disabled={!currentSong}
-            className="p-1.5 rounded-md text-mochy-muted hover:text-white transition-colors disabled:opacity-40 disabled:hover:text-mochy-muted"
+            className="p-1.5 rounded-sm text-[#8492a6] hover:text-white transition-all disabled:opacity-30 border border-transparent hover:border-[#242a35] hover:bg-[#181c24]"
           >
-            <SkipForward className="w-5 h-5" />
+            <SkipForward className="w-4 h-4" />
           </button>
 
           {/* Repeat */}
@@ -226,21 +209,35 @@ export const PlayerBar: React.FC = () => {
                 ? "Lặp lại danh sách"
                 : "Không lặp lại"
             }
-            className="p-1.5 rounded-md transition-colors relative"
-            style={{ color: repeatMode !== "off" ? accentColor.hex : undefined }}
+            className={`p-1.5 rounded-sm transition-all border ${
+              repeatMode !== "off"
+                ? "bg-[#181c24] text-[#00f0ff] border-[#00f0ff]/50 shadow-[0_0_8px_rgba(0,240,255,0.2)]"
+                : "text-[#8492a6] hover:text-white border-transparent hover:bg-[#181c24]"
+            }`}
           >
             {repeatMode === "one" ? (
-              <Repeat1 className="w-4 h-4" />
+              <Repeat1 className="w-3.5 h-3.5" />
             ) : (
-              <Repeat className="w-4 h-4" />
+              <Repeat className="w-3.5 h-3.5" />
             )}
           </button>
         </div>
 
-        {/* Timeline Bar */}
-        <div className="w-full flex items-center gap-2.5 text-xs text-mochy-muted">
-          <span className="w-9 text-right font-mono">{formatSeconds(currentTime)}</span>
+        {/* RPG Timeline Resource Gauge (HP / Stamina Bar Style) */}
+        <div className="w-full flex items-center gap-2.5 text-xs">
+          <span className="w-10 text-right font-mono text-[10px] text-[#8492a6] font-semibold">
+            {formatSeconds(currentTime)}
+          </span>
+
           <div className="relative flex-1 flex items-center group py-1">
+            {/* Custom Background Gauge */}
+            <div className="absolute inset-x-0 h-1.5 bg-[#181c24] border border-[#242a35] rounded-xs overflow-hidden pointer-events-none">
+              <div
+                className="h-full bg-gradient-to-r from-[#00ff9d] to-[#00f0ff] transition-all duration-100"
+                style={{ width: `${progressPercent}%` }}
+              />
+            </div>
+
             <input
               type="range"
               min={0}
@@ -249,53 +246,65 @@ export const PlayerBar: React.FC = () => {
               value={currentTime}
               onChange={handleSeekChange}
               disabled={!currentSong}
-              className="w-full h-1 bg-mochy-border group-hover:h-1.5 rounded-lg appearance-none cursor-pointer transition-all"
-              style={{ accentColor: accentColor.hex }}
+              className="w-full h-2 opacity-0 cursor-pointer z-10"
             />
           </div>
-          <span className="w-9 text-left font-mono">{formatSeconds(duration)}</span>
+
+          <span className="w-10 text-left font-mono text-[10px] text-[#444c5c] font-semibold">
+            {formatSeconds(duration)}
+          </span>
         </div>
       </div>
 
-      {/* 3. Right Section: Lyrics, Queue, Volume */}
-      <div className="flex items-center justify-end gap-2 w-1/4 min-w-[200px]">
-        {/* Karaoke Lyrics Button */}
+      {/* 3. Right Section: Telemetry, Audio Quality Badge & Volume */}
+      <div className="flex items-center justify-end gap-2.5 w-1/4 min-w-[220px]">
+        {/* Audio Quality Badge (OPUS 160KBPS) */}
+        <div
+          className="px-2 py-0.5 rounded-xs bg-[#14231b] border border-[#00ff9d]/40 text-[#00ff9d] text-[10px] font-mono font-bold tracking-wider shadow-[0_0_8px_rgba(0,255,157,0.15)] flex items-center gap-1.5"
+          title="Codec & Bitrate Telemetry"
+        >
+          <span className="w-1.5 h-1.5 rounded-full bg-[#00ff9d] animate-pulse" />
+          <span>{streamInfo?.badgeText || "OPUS 160KBPS"}</span>
+        </div>
+
+        {/* Karaoke Lyrics Button [LRC] */}
         <button
           onClick={() => setIsLyricsOpen((prev) => !prev)}
           title="Lời bài hát Karaoke"
-          className="p-2 rounded-lg transition-colors"
-          style={{
-            backgroundColor: isLyricsOpen ? `rgba(${accentColor.rgbString}, 0.2)` : undefined,
-            color: isLyricsOpen ? accentColor.hex : undefined,
-          }}
+          className={`px-2 py-1 rounded-sm text-xs font-mono transition-all border flex items-center gap-1 ${
+            isLyricsOpen
+              ? "bg-[#181c24] text-[#00f0ff] border-[#00f0ff]/50 shadow-[0_0_8px_rgba(0,240,255,0.2)]"
+              : "text-[#8492a6] hover:text-white border-transparent hover:border-[#242a35] hover:bg-[#181c24]"
+          }`}
         >
-          <Mic2 className="w-4 h-4" />
+          <Mic2 className="w-3.5 h-3.5" />
+          <span className="text-[10px] font-bold">LRC</span>
         </button>
 
-        {/* Queue Drawer Button */}
+        {/* Queue Drawer Button [QUEUE] */}
         <button
           onClick={() => setIsQueueOpen((prev) => !prev)}
           title="Hàng đợi phát nhạc"
-          className="p-2 rounded-lg transition-colors"
-          style={{
-            backgroundColor: isQueueOpen ? `rgba(${accentColor.rgbString}, 0.2)` : undefined,
-            color: isQueueOpen ? accentColor.hex : undefined,
-          }}
+          className={`p-1.5 rounded-sm transition-all border ${
+            isQueueOpen
+              ? "bg-[#181c24] text-[#00f0ff] border-[#00f0ff]/50 shadow-[0_0_8px_rgba(0,240,255,0.2)]"
+              : "text-[#8492a6] hover:text-white border-transparent hover:border-[#242a35] hover:bg-[#181c24]"
+          }`}
         >
-          <ListMusic className="w-4 h-4" />
+          <ListMusic className="w-3.5 h-3.5" />
         </button>
 
-        {/* Volume controls */}
-        <div className="flex items-center gap-1.5 pl-2">
+        {/* Volume controls with Monospace Percentage */}
+        <div className="flex items-center gap-1.5 pl-1.5 border-l border-[#242a35]">
           <button
             onClick={toggleMute}
             title={isMuted ? "Bật âm thanh" : "Tắt tiếng"}
-            className="p-1.5 rounded-md text-mochy-muted hover:text-white transition-colors"
+            className="p-1 rounded-sm text-[#8492a6] hover:text-white transition-colors"
           >
             {isMuted || volume === 0 ? (
-              <VolumeX className="w-4 h-4 text-mochy-subtext" />
+              <VolumeX className="w-3.5 h-3.5 text-[#ff3366]" />
             ) : (
-              <Volume2 className="w-4 h-4" />
+              <Volume2 className="w-3.5 h-3.5" />
             )}
           </button>
           <input
@@ -305,9 +314,11 @@ export const PlayerBar: React.FC = () => {
             step={0.01}
             value={isMuted ? 0 : volume}
             onChange={handleVolumeChange}
-            className="w-20 h-1 bg-mochy-border hover:h-1.5 rounded-lg appearance-none cursor-pointer transition-all"
-            style={{ accentColor: accentColor.hex }}
+            className="w-16 h-1 bg-[#242a35] rounded-xs appearance-none cursor-pointer accent-[#00f0ff]"
           />
+          <span className="text-[9px] font-mono text-[#444c5c] w-6 text-right">
+            {isMuted ? "0%" : `${Math.round(volume * 100)}%`}
+          </span>
         </div>
       </div>
     </footer>

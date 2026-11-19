@@ -7,8 +7,9 @@ import {
   Library,
   Heart,
   Plus,
-  Music,
+  Radio,
   ListMusic,
+  Terminal,
 } from "lucide-react";
 import type { ActiveView, Playlist } from "../types.ts";
 
@@ -40,134 +41,171 @@ export const Sidebar: React.FC<SidebarProps> = ({
   }, [playlistRefreshKey]);
 
   return (
-    <aside className="w-64 bg-mochy-sidebar border-r border-mochy-border flex flex-col h-full flex-shrink-0 select-none">
-      {/* App Branding */}
-      <div className="p-5 flex items-center gap-3">
-        <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-mochy-accent to-rose-600 flex items-center justify-center shadow-lg shadow-rose-950/40">
-          <Music className="w-5 h-5 text-white" />
+    <aside className="w-64 bg-[#13161c] border-r border-[#242a35] flex flex-col h-full flex-shrink-0 select-none font-sans z-10">
+      {/* App Branding - Cyber Terminal Style */}
+      <div className="p-4 border-b border-[#242a35]/80 flex items-center justify-between">
+        <div className="flex items-center gap-2.5">
+          <div className="w-8 h-8 rounded-sm bg-[#181c24] border border-[#00f0ff]/40 flex items-center justify-center shadow-[0_0_10px_rgba(0,240,255,0.2)]">
+            <Radio className="w-4 h-4 text-[#00f0ff] animate-pulse" />
+          </div>
+          <div>
+            <h1 className="font-extrabold text-sm tracking-widest text-white leading-none font-mono">
+              TÀY<span className="text-[#00f0ff]">.OS</span>
+            </h1>
+            <span className="text-[10px] font-mono text-[#8492a6] tracking-wider block mt-0.5">
+              // MUSIC_TERMINAL
+            </span>
+          </div>
         </div>
-        <div>
-          <h1 className="font-bold text-lg tracking-tight text-white leading-none">
-            Tày<span className="text-mochy-accent">Music</span>
-          </h1>
-          <span className="text-[10px] text-mochy-subtext uppercase font-semibold tracking-wider">
-            PC Edition
-          </span>
+        <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-sm bg-[#181c24] border border-[#242a35]">
+          <span className="w-1.5 h-1.5 rounded-full bg-[#00ff9d] animate-ping" />
+          <span className="text-[9px] font-mono text-[#00ff9d] font-bold">ONLINE</span>
         </div>
       </div>
 
-      {/* Main Navigation */}
-      <nav className="px-3 py-2 space-y-1">
-        <button
-          onClick={() => {
-            setSelectedPlaylistId(null);
-            setActiveView("home");
-          }}
-          className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
-            activeView === "home" && !selectedPlaylistId
-              ? "bg-mochy-card text-white font-semibold"
-              : "text-mochy-muted hover:text-white hover:bg-mochy-cardHover/60"
-          }`}
-        >
-          <Home className={`w-5 h-5 ${activeView === "home" && !selectedPlaylistId ? "text-mochy-accent" : ""}`} />
-          <span>Trang chủ</span>
-        </button>
+      {/* Main Navigation - HUD Indexed Menu */}
+      <div className="p-3">
+        <div className="text-[10px] font-mono text-[#444c5c] font-semibold tracking-wider px-2 mb-2 uppercase">
+          // NAVIGATION_ROOT
+        </div>
+        <nav className="space-y-1">
+          <button
+            onClick={() => {
+              setSelectedPlaylistId(null);
+              setActiveView("home");
+            }}
+            className={`w-full flex items-center justify-between px-3 py-2 rounded-sm text-xs font-mono transition-all border ${
+              activeView === "home" && !selectedPlaylistId
+                ? "bg-[#181c24] text-[#00f0ff] border-[#00f0ff]/50 shadow-[0_0_12px_rgba(0,240,255,0.15)] font-semibold"
+                : "text-[#8492a6] hover:text-white hover:bg-[#181c24]/60 border-transparent"
+            }`}
+          >
+            <div className="flex items-center gap-2.5">
+              <Home className="w-4 h-4 flex-shrink-0" />
+              <span className="font-sans text-xs">Trang chủ</span>
+            </div>
+            <span className="text-[10px] text-[#444c5c] font-mono">[01]</span>
+          </button>
 
-        <button
-          onClick={() => {
-            setSelectedPlaylistId(null);
-            setActiveView("search");
-          }}
-          className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
-            activeView === "search" && !selectedPlaylistId
-              ? "bg-mochy-card text-white font-semibold"
-              : "text-mochy-muted hover:text-white hover:bg-mochy-cardHover/60"
-          }`}
-        >
-          <Search className={`w-5 h-5 ${activeView === "search" && !selectedPlaylistId ? "text-mochy-accent" : ""}`} />
-          <span>Tìm kiếm</span>
-        </button>
+          <button
+            onClick={() => {
+              setSelectedPlaylistId(null);
+              setActiveView("search");
+            }}
+            className={`w-full flex items-center justify-between px-3 py-2 rounded-sm text-xs font-mono transition-all border ${
+              activeView === "search" && !selectedPlaylistId
+                ? "bg-[#181c24] text-[#00f0ff] border-[#00f0ff]/50 shadow-[0_0_12px_rgba(0,240,255,0.15)] font-semibold"
+                : "text-[#8492a6] hover:text-white hover:bg-[#181c24]/60 border-transparent"
+            }`}
+          >
+            <div className="flex items-center gap-2.5">
+              <Search className="w-4 h-4 flex-shrink-0" />
+              <span className="font-sans text-xs">Tìm kiếm</span>
+            </div>
+            <span className="text-[10px] text-[#444c5c] font-mono">[02]</span>
+          </button>
 
+          <button
+            onClick={() => {
+              setSelectedPlaylistId(null);
+              setActiveView("library");
+            }}
+            className={`w-full flex items-center justify-between px-3 py-2 rounded-sm text-xs font-mono transition-all border ${
+              activeView === "library" && !selectedPlaylistId
+                ? "bg-[#181c24] text-[#00f0ff] border-[#00f0ff]/50 shadow-[0_0_12px_rgba(0,240,255,0.15)] font-semibold"
+                : "text-[#8492a6] hover:text-white hover:bg-[#181c24]/60 border-transparent"
+            }`}
+          >
+            <div className="flex items-center gap-2.5">
+              <Library className="w-4 h-4 flex-shrink-0" />
+              <span className="font-sans text-xs">Thư viện</span>
+            </div>
+            <span className="text-[10px] text-[#444c5c] font-mono">[03]</span>
+          </button>
+        </nav>
+      </div>
+
+      {/* Cyber Actions - Uplink Module */}
+      <div className="px-3 pb-2">
         <button
-          onClick={() => {
-            setSelectedPlaylistId(null);
-            setActiveView("library");
-          }}
-          className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
-            activeView === "library" && !selectedPlaylistId
-              ? "bg-mochy-card text-white font-semibold"
-              : "text-mochy-muted hover:text-white hover:bg-mochy-cardHover/60"
-          }`}
+          onClick={onOpenSpotifyImport}
+          className="w-full flex items-center justify-between px-3 py-2 rounded-sm text-xs font-mono bg-[#14231b] hover:bg-[#183024] text-[#00ff9d] border border-[#00ff9d]/30 hover:border-[#00ff9d]/70 transition-all shadow-[0_0_10px_rgba(0,255,157,0.1)] group"
         >
-          <Library className={`w-5 h-5 ${activeView === "library" && !selectedPlaylistId ? "text-mochy-accent" : ""}`} />
-          <span>Thư viện</span>
+          <div className="flex items-center gap-2">
+            <Terminal className="w-3.5 h-3.5 flex-shrink-0 text-[#00ff9d]" />
+            <span className="font-sans text-xs font-medium">Nhập từ Spotify</span>
+          </div>
+          <span className="text-[9px] text-[#00ff9d]/70 font-mono font-bold group-hover:translate-x-0.5 transition-transform">
+            [UPLINK]
+          </span>
         </button>
-      </nav>
+      </div>
 
       {/* Divider */}
-      <div className="my-2 mx-4 border-t border-mochy-border/60" />
+      <div className="mx-3 border-t border-[#242a35]/60" />
 
       {/* Playlists Header */}
-      <div className="px-4 py-2 flex items-center justify-between">
-        <span className="text-xs font-semibold text-mochy-subtext uppercase tracking-wider">
-          Danh sách phát
+      <div className="px-4 py-2.5 flex items-center justify-between">
+        <span className="text-[10px] font-mono text-[#444c5c] font-semibold tracking-wider uppercase">
+          // PLAYLISTS [{playlists.length}]
         </span>
         <button
           onClick={onOpenCreatePlaylist}
           title="Tạo playlist mới"
-          className="p-1 rounded-md text-mochy-muted hover:text-white hover:bg-mochy-cardHover transition-colors"
+          className="p-1 rounded-sm text-[#8492a6] hover:text-[#00f0ff] hover:bg-[#181c24] border border-transparent hover:border-[#242a35] transition-all"
         >
-          <Plus className="w-4 h-4" />
+          <Plus className="w-3.5 h-3.5" />
         </button>
       </div>
 
       {/* Playlists List */}
       <div className="flex-1 px-3 overflow-y-auto space-y-1">
-        {/* Spotify Import Trigger */}
-        <button
-          onClick={onOpenSpotifyImport}
-          className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-emerald-400 hover:text-white hover:bg-emerald-950/40 border border-emerald-900/30 transition-all mb-1 group"
-        >
-          <div className="w-6 h-6 rounded-md bg-[#1DB954] flex items-center justify-center flex-shrink-0 shadow-sm group-hover:scale-105 transition-transform">
-            <svg className="w-3.5 h-3.5 text-black fill-current" viewBox="0 0 24 24">
-              <path d="M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.299.421-1.02.599-1.559.3z" />
-            </svg>
-          </div>
-          <span className="truncate font-semibold text-xs">Nhập từ Spotify</span>
-        </button>
-
         {/* Liked Songs Shortcut */}
         <button
           onClick={() => {
             setSelectedPlaylistId(null);
             setActiveView("library");
           }}
-          className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-mochy-muted hover:text-white hover:bg-mochy-cardHover/60 transition-colors"
+          className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-sm text-xs text-[#8492a6] hover:text-white hover:bg-[#181c24] border border-transparent hover:border-[#242a35] transition-all group"
         >
-          <div className="w-6 h-6 rounded bg-gradient-to-br from-rose-500 to-rose-700 flex items-center justify-center flex-shrink-0">
-            <Heart className="w-3.5 h-3.5 text-white fill-white" />
+          <div className="flex items-center gap-2 truncate">
+            <Heart className="w-3.5 h-3.5 text-rose-500 fill-rose-500/30 flex-shrink-0" />
+            <span className="truncate font-sans">Bài hát đã thích</span>
           </div>
-          <span className="truncate">Bài hát đã thích</span>
+          <span className="text-[9px] font-mono text-[#444c5c] group-hover:text-[#00f0ff]">
+            &gt;
+          </span>
         </button>
 
         {/* User Created Playlists */}
-        {playlists.map((playlist) => (
+        {playlists.map((playlist, idx) => (
           <button
             key={playlist.id}
             onClick={() => {
               setSelectedPlaylistId(playlist.id);
               setActiveView("playlist-detail");
             }}
-            className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors text-left ${
+            className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-sm text-xs transition-all text-left border ${
               selectedPlaylistId === playlist.id
-                ? "bg-mochy-card text-white font-medium"
-                : "text-mochy-muted hover:text-white hover:bg-mochy-cardHover/60"
+                ? "bg-[#181c24] text-[#00f0ff] border-[#00f0ff]/40 font-medium"
+                : "text-[#8492a6] hover:text-white hover:bg-[#181c24]/50 border-transparent hover:border-[#242a35]"
             }`}
           >
-            <ListMusic className="w-4 h-4 flex-shrink-0 text-mochy-subtext" />
-            <span className="truncate">{playlist.name}</span>
+            <div className="flex items-center gap-2 truncate">
+              <ListMusic className="w-3.5 h-3.5 flex-shrink-0 text-[#444c5c]" />
+              <span className="truncate font-sans">{playlist.name}</span>
+            </div>
+            <span className="text-[9px] font-mono text-[#444c5c]">
+              #{String(idx + 1).padStart(2, "0")}
+            </span>
           </button>
         ))}
+      </div>
+
+      {/* Sidebar Footer - System Telemetry Tag */}
+      <div className="p-2.5 border-t border-[#242a35]/80 bg-[#0d0f12]/60 text-[9px] font-mono text-[#444c5c] flex items-center justify-between">
+        <span>CORE: INNERTUBE_X</span>
+        <span className="text-[#00ff9d]">OK:200</span>
       </div>
     </aside>
   );

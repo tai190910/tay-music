@@ -1,8 +1,8 @@
 // src/renderer/components/SongRow.tsx
 
 import React, { useState } from "react";
-import { Play, Pause, Heart, Plus, MoreHorizontal, Disc, RefreshCw } from "lucide-react";
-import type { Song, Playlist } from "../types.ts";
+import { Play, Pause, Heart, Plus, Trash2, Disc, RefreshCw } from "lucide-react";
+import type { Song } from "../types.ts";
 import { usePlayer } from "../context/PlayerContext.tsx";
 
 interface SongRowProps {
@@ -24,11 +24,10 @@ export const SongRow: React.FC<SongRowProps> = ({
   onFixMatch,
   showRemoveOption,
 }) => {
-  const { currentSong, isPlaying, playSong, togglePlay, accentColor } = usePlayer();
+  const { currentSong, isPlaying, playSong, togglePlay } = usePlayer();
   const [isLiked, setIsLiked] = useState<boolean>(false);
   const [hasCheckedLike, setHasCheckedLike] = useState<boolean>(false);
 
-  // Check like state on hover or mount
   const checkLike = async () => {
     if (!hasCheckedLike && window.mochyApi) {
       const liked = await window.mochyApi.isLiked(song.id);
@@ -59,46 +58,23 @@ export const SongRow: React.FC<SongRowProps> = ({
     <div
       onMouseEnter={checkLike}
       onClick={handlePlayClick}
-      className={`group flex items-center gap-4 px-3 py-2 rounded-xl text-sm transition-all duration-200 cursor-pointer select-none ${
+      className={`group flex items-center gap-3.5 px-3 py-2 rounded-xs text-xs font-sans transition-all duration-150 cursor-pointer select-none border ${
         isCurrent
-          ? "bg-white/5 font-medium border border-white/10 shadow-sm"
-          : "hover:bg-white/5 text-mochy-muted hover:text-white"
+          ? "bg-[#161a22] text-white border-[#00f0ff]/40 shadow-[0_0_12px_rgba(0,240,255,0.08)]"
+          : "bg-transparent text-[#8492a6] hover:text-white hover:bg-[#181c24] border-transparent hover:border-[#242a35]"
       }`}
     >
-      {/* Index or Play/Pause Button or Animated Equalizer */}
-      <div className="w-6 flex items-center justify-center flex-shrink-0 text-xs text-mochy-subtext font-mono">
+      {/* Monospace Index or Equalizer or Play Button */}
+      <div className="w-7 flex items-center justify-center flex-shrink-0 font-mono text-[11px] text-[#444c5c]">
         {isCurrent && isPlaying ? (
           <div className="flex items-end justify-center gap-0.5 h-3.5 group-hover:hidden">
-            <span
-              className="w-0.5 rounded-full"
-              style={{
-                backgroundColor: accentColor.hex,
-                height: "100%",
-                animation: "visualizerBounce 0.6s ease-in-out infinite alternate",
-              }}
-            />
-            <span
-              className="w-0.5 rounded-full"
-              style={{
-                backgroundColor: accentColor.hex,
-                height: "60%",
-                animation: "visualizerBounce 0.8s ease-in-out infinite alternate",
-                animationDelay: "0.15s",
-              }}
-            />
-            <span
-              className="w-0.5 rounded-full"
-              style={{
-                backgroundColor: accentColor.hex,
-                height: "80%",
-                animation: "visualizerBounce 0.5s ease-in-out infinite alternate",
-                animationDelay: "0.3s",
-              }}
-            />
+            <span className="w-0.5 bg-[#00ff9d] rounded-full animate-visualizer-1 h-full" />
+            <span className="w-0.5 bg-[#00f0ff] rounded-full animate-visualizer-2 h-full" />
+            <span className="w-0.5 bg-[#00ff9d] rounded-full animate-visualizer-3 h-full" />
           </div>
         ) : (
-          <span className={`group-hover:hidden ${isCurrent ? "hidden" : "block"}`}>
-            {index + 1}
+          <span className={`group-hover:hidden ${isCurrent ? "text-[#00f0ff] font-bold" : ""}`}>
+            {String(index + 1).padStart(2, "0")}
           </span>
         )}
         <button
@@ -106,76 +82,68 @@ export const SongRow: React.FC<SongRowProps> = ({
             e.stopPropagation();
             handlePlayClick();
           }}
-          className={`hover:scale-110 active:scale-95 transition-transform ${
-            isCurrent ? "hidden group-hover:block" : "hidden group-hover:block"
-          }`}
+          className="hidden group-hover:block hover:scale-110 active:scale-95 transition-transform"
         >
           {isCurrent && isPlaying ? (
-            <Pause className="w-4 h-4" style={{ fill: accentColor.hex, color: accentColor.hex }} />
+            <Pause className="w-3.5 h-3.5 text-[#00f0ff] fill-[#00f0ff]" />
           ) : (
-            <Play
-              className="w-4 h-4 ml-0.5"
-              style={{
-                fill: isCurrent ? accentColor.hex : "#ffffff",
-                color: isCurrent ? accentColor.hex : "#ffffff",
-              }}
-            />
+            <Play className="w-3.5 h-3.5 text-[#00f0ff] fill-[#00f0ff] ml-0.5" />
           )}
         </button>
       </div>
 
-      {/* Thumbnail */}
-      <div className="w-10 h-10 rounded-lg overflow-hidden bg-mochy-card flex-shrink-0 border border-mochy-border/40 relative shadow-sm group-hover:scale-105 transition-transform">
+      {/* Square Thumbnail with 1px border */}
+      <div className="w-9 h-9 rounded-xs overflow-hidden bg-[#181c24] flex-shrink-0 border border-[#242a35] relative group-hover:border-[#00f0ff]/40 transition-colors">
         {song.thumbnail ? (
           <img src={song.thumbnail} alt={song.title} className="w-full h-full object-cover" />
         ) : (
-          <div className="w-full h-full flex items-center justify-center bg-mochy-card">
-            <Disc className="w-5 h-5 text-mochy-subtext" />
+          <div className="w-full h-full flex items-center justify-center bg-[#181c24]">
+            <Disc className="w-4 h-4 text-[#444c5c]" />
           </div>
         )}
       </div>
 
       {/* Title & Artist */}
-      <div className="flex-1 min-w-0 pr-4">
+      <div className="flex-1 min-w-0 pr-3">
         <div className="flex items-center gap-2">
           <span
-            className="truncate text-sm font-medium transition-colors"
-            style={{
-              color: isCurrent ? accentColor.hex : undefined,
-              fontWeight: isCurrent ? 700 : 500,
-            }}
+            className={`truncate text-xs tracking-tight transition-colors ${
+              isCurrent ? "text-[#00f0ff] font-bold" : "text-[#e2e8f0] font-medium"
+            }`}
           >
             {song.title}
           </span>
           {song.explicit && (
-            <span className="text-[9px] font-bold px-1 rounded bg-mochy-card text-mochy-subtext border border-mochy-border flex-shrink-0">
-              E
+            <span className="text-[8px] font-mono font-bold px-1 rounded-xs bg-[#242a35] text-[#8492a6] border border-[#323b4a] flex-shrink-0">
+              EXP
             </span>
           )}
         </div>
-        <span className="text-xs text-mochy-muted truncate block">
+        <span className="text-[11px] text-[#8492a6] truncate block mt-0.5">
           {song.artists.map((a) => a.name).join(", ")}
         </span>
       </div>
 
-      {/* Duration */}
-      <div className="text-xs font-mono text-mochy-subtext w-12 text-right">
+      {/* Duration (Monospace) */}
+      <div className="text-[11px] font-mono text-[#8492a6] w-12 text-right">
         {song.durationText ||
           (song.duration && song.duration > 0
-            ? `${Math.floor(song.duration / 60)}:${(song.duration % 60).toString().padStart(2, "0")}`
+            ? `${Math.floor(song.duration / 60).toString().padStart(2, "0")}:${(song.duration % 60).toString().padStart(2, "0")}`
             : "--:--")}
       </div>
 
-      {/* Action Buttons: Like, Add to Playlist */}
-      <div className="flex items-center gap-1">
+      {/* Cyber Action Buttons */}
+      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
         <button
           onClick={handleToggleLike}
           title={isLiked ? "Bỏ thích" : "Yêu thích"}
-          className={`p-1.5 rounded-full hover:bg-mochy-card transition-colors ${
-            isLiked ? "text-mochy-accent opacity-100" : "opacity-0 group-hover:opacity-100 text-mochy-subtext hover:text-white"
-          }`}
+          className="p-1 rounded-xs hover:bg-[#242a35] text-[#8492a6] hover:text-[#ff3366] transition-colors"
         >
-          <Heart className={`w-4 h-4 ${isLiked ? "fill-mochy-accent text-mochy-accent" : ""}`} />
+          <Heart
+            className={`w-3.5 h-3.5 ${
+              isLiked ? "fill-[#ff3366] text-[#ff3366] opacity-100" : ""
+            }`}
+          />
         </button>
 
         {onAddToPlaylist && (
@@ -185,9 +153,9 @@ export const SongRow: React.FC<SongRowProps> = ({
               onAddToPlaylist(song);
             }}
             title="Thêm vào playlist"
-            className="p-1.5 rounded-full opacity-0 group-hover:opacity-100 text-mochy-subtext hover:text-white hover:bg-mochy-card transition-all"
+            className="p-1 rounded-xs hover:bg-[#242a35] text-[#8492a6] hover:text-[#00f0ff] transition-colors"
           >
-            <Plus className="w-4 h-4" />
+            <Plus className="w-3.5 h-3.5" />
           </button>
         )}
 
@@ -198,7 +166,7 @@ export const SongRow: React.FC<SongRowProps> = ({
               onFixMatch(song);
             }}
             title="Đổi phiên bản / Khớp lại"
-            className="p-1.5 rounded-full opacity-0 group-hover:opacity-100 text-mochy-subtext hover:text-mochy-accent hover:bg-mochy-card transition-all"
+            className="p-1 rounded-xs hover:bg-[#242a35] text-[#8492a6] hover:text-[#00ff9d] transition-colors"
           >
             <RefreshCw className="w-3.5 h-3.5" />
           </button>
@@ -210,10 +178,10 @@ export const SongRow: React.FC<SongRowProps> = ({
               e.stopPropagation();
               onRemoveFromPlaylist(song.id);
             }}
-            title="Xóa khỏi playlist này"
-            className="p-1.5 rounded-full opacity-0 group-hover:opacity-100 text-rose-400 hover:text-rose-300 hover:bg-rose-950/40 transition-all"
+            title="Xóa khỏi playlist"
+            className="p-1 rounded-xs hover:bg-rose-950/40 text-rose-400 hover:text-rose-300 transition-colors"
           >
-            <MoreHorizontal className="w-4 h-4" />
+            <Trash2 className="w-3.5 h-3.5" />
           </button>
         )}
       </div>

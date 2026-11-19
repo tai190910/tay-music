@@ -52,6 +52,14 @@ export interface LyricsData {
   };
 }
 
+export interface StreamInfo {
+  bitrate?: number;
+  mimeType?: string;
+  client?: string;
+  codec?: string;
+  badgeText: string;
+}
+
 export type RepeatMode = "off" | "all" | "one";
 export type ActiveView = "home" | "search" | "library" | "playlist-detail";
 
