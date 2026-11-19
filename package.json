@@ -1,6 +1,6 @@
 {
   "name": "tay-music",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Tày Music PC Desktop Application (Electron + React + Vite + TailwindCSS)",
   "main": "dist-electron/main.js",
   "type": "module",
