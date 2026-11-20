@@ -3,7 +3,52 @@
 import React, { useEffect, useLayoutEffect, useRef, useState, useCallback, useMemo } from "react";
 import { X, Mic2, Disc } from "lucide-react";
 import { usePlayer } from "../context/PlayerContext.tsx";
-import type { LyricsData, LyricsLine } from "../types.ts";
+import type { LyricsData, LyricsLine, Song } from "../types.ts";
+
+const DEFAULT_LYRIC_LOOKAHEAD_SEC = 1.0;
+const LYRIC_OFFSET_STEP_SEC = 0.5;
+const LYRIC_OFFSET_STORAGE_PREFIX = "tay_music_lyric_offset:";
+
+function getSongOffsetStorageKey(song?: Song | null): string | null {
+  if (!song) return null;
+  const vid = (song.videoId || song.id || "").trim();
+  if (vid) return `${LYRIC_OFFSET_STORAGE_PREFIX}${vid}`;
+  const artists = song.artists?.map((a) => a.name).join(",") || "";
+  const fallback = `${song.title || ""}::${artists}`.trim().toLowerCase();
+  return fallback ? `${LYRIC_OFFSET_STORAGE_PREFIX}${fallback}` : null;
+}
+
+function readSongOffset(song?: Song | null): number {
+  const key = getSongOffsetStorageKey(song);
+  if (!key) return 0;
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return 0;
+    const parsed = parseFloat(raw);
+    return Number.isFinite(parsed) ? Math.round(parsed * 10) / 10 : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function saveSongOffset(song: Song | null | undefined, offsetSec: number): void {
+  const key = getSongOffsetStorageKey(song);
+  if (!key) return;
+  try {
+    const rounded = Math.round(offsetSec * 10) / 10;
+    if (rounded === 0) {
+      localStorage.removeItem(key);
+    } else {
+      localStorage.setItem(key, String(rounded));
+    }
+  } catch {}
+}
+
+function formatOffsetLabel(offsetSec: number): string {
+  const rounded = Math.round(offsetSec * 10) / 10;
+  if (rounded === 0) return "+0.0s";
+  return `${rounded > 0 ? "+" : ""}${rounded.toFixed(1)}s`;
+}
 
 interface LyricsViewProps {
   isMainStageView?: boolean;
@@ -57,9 +102,9 @@ function computeTypedCharCount(
   const lineDurationMs = Math.max(800, nextMs - startMs);
 
   const elapsedMs = Math.max(0, currentTimeMs - startMs);
-  // Singing typically finishes across 85% of the line duration window (capped at 5s)
-  const typingDuration = Math.min(lineDurationMs * 0.85, 5000);
-  const ratio = Math.min(1, elapsedMs / (typingDuration || 1000));
+  // Finish typing 15-20% before the next line starts (82% window, capped at 4.5s)
+  const typingDuration = Math.max(450, Math.min(lineDurationMs * 0.82, 4500));
+  const ratio = Math.min(1, elapsedMs / typingDuration);
 
   return Math.max(1, Math.min(totalChars, Math.ceil(ratio * totalChars)));
 }
@@ -140,11 +185,15 @@ export const LyricsView: React.FC<LyricsViewProps> = ({
   );
   const isSynced = Boolean(lyricsData?.parsed?.isSynced && lines.length > 0);
 
+  const [userOffset, setUserOffset] = useState<number>(() => readSongOffset(currentSong));
+  const userOffsetRef = useRef<number>(userOffset);
+
   // State only changes when the active line index jumps to a new sentence (zero per-char or per-frame setState)
   const [activeLyricsIndex, setActiveLyricsIndex] = useState<number>(() => {
     if (isSynced && lines.length > 0) {
-      const curMs = (audioRef.current?.currentTime ?? 0) * 1000;
-      return binarySearchLineIndex(lines, curMs);
+      const curSec = audioRef.current?.currentTime ?? 0;
+      const effectiveMs = (curSec + DEFAULT_LYRIC_LOOKAHEAD_SEC + readSongOffset(currentSong)) * 1000;
+      return binarySearchLineIndex(lines, effectiveMs);
     }
     return -1;
   });
@@ -181,6 +230,7 @@ export const LyricsView: React.FC<LyricsViewProps> = ({
   const manualScrollUntilRef = useRef<number>(0);
   const snapNextScrollRef = useRef<boolean>(true);
   const settleRafIdRef = useRef<number | null>(null);
+  const syncNowRef = useRef<(() => void) | null>(null);
 
   const applyScrollTransform = useCallback((y: number) => {
     const clampedY = Math.max(0, Math.min(maxScrollRef.current, y));
@@ -285,9 +335,16 @@ export const LyricsView: React.FC<LyricsViewProps> = ({
       prevSongIdRef.current = currentSong?.id;
       prevLyricsObjRef.current = lyricsData;
 
+      const loadedOffset = songChanged || isInitialMount ? readSongOffset(currentSong) : userOffsetRef.current;
+      if (songChanged || isInitialMount) {
+        userOffsetRef.current = loadedOffset;
+        setUserOffset(loadedOffset);
+      }
+
       const curSec = songChanged ? 0 : (audioRef.current?.currentTime ?? 0);
+      const effectiveMs = (curSec + DEFAULT_LYRIC_LOOKAHEAD_SEC + loadedOffset) * 1000;
       const initIdx =
-        isSynced && lines.length > 0 ? binarySearchLineIndex(lines, curSec * 1000) : -1;
+        isSynced && lines.length > 0 ? binarySearchLineIndex(lines, effectiveMs) : -1;
 
       activeIndexRef.current = initIdx;
       lastCharCountRef.current = -1;
@@ -336,7 +393,8 @@ export const LyricsView: React.FC<LyricsViewProps> = ({
       activeTextRef.current
     ) {
       const curSec = songChanged ? 0 : (audioRef.current?.currentTime ?? 0);
-      const charsToShow = computeTypedCharCount(lines, activeLyricsIndex, curSec * 1000);
+      const effectiveMs = (curSec + DEFAULT_LYRIC_LOOKAHEAD_SEC + userOffsetRef.current) * 1000;
+      const charsToShow = computeTypedCharCount(lines, activeLyricsIndex, effectiveMs);
       lastCharCountRef.current = charsToShow;
       activeTextRef.current.textContent = lines[activeLyricsIndex].text.slice(0, charsToShow);
     }
@@ -378,8 +436,8 @@ export const LyricsView: React.FC<LyricsViewProps> = ({
       }
 
       if (isSynced && lines.length > 0) {
-        const curMs = curSec * 1000;
-        const nextIdx = binarySearchLineIndex(lines, curMs);
+        const effectiveMs = (curSec + DEFAULT_LYRIC_LOOKAHEAD_SEC + userOffsetRef.current) * 1000;
+        const nextIdx = binarySearchLineIndex(lines, effectiveMs);
 
         if (nextIdx !== activeIndexRef.current) {
           activeIndexRef.current = nextIdx;
@@ -391,7 +449,7 @@ export const LyricsView: React.FC<LyricsViewProps> = ({
           nextIdx < lines.length &&
           activeTextRef.current
         ) {
-          const charsToShow = computeTypedCharCount(lines, nextIdx, curMs);
+          const charsToShow = computeTypedCharCount(lines, nextIdx, effectiveMs);
           if (charsToShow !== lastCharCountRef.current) {
             lastCharCountRef.current = charsToShow;
             activeTextRef.current.textContent = lines[nextIdx].text.slice(0, charsToShow);
@@ -433,6 +491,10 @@ export const LyricsView: React.FC<LyricsViewProps> = ({
       syncFrame(performance.now(), 0);
     };
 
+    syncNowRef.current = () => {
+      syncFrame(performance.now(), 0);
+    };
+
     if (audio) {
       audio.addEventListener("seeking", handleAudioSeek);
       audio.addEventListener("seeked", handleAudioSeek);
@@ -444,6 +506,7 @@ export const LyricsView: React.FC<LyricsViewProps> = ({
 
     if (!isPlaying || !isLyricFrameOpen || !currentSong) {
       return () => {
+        syncNowRef.current = null;
         if (audio) {
           audio.removeEventListener("seeking", handleAudioSeek);
           audio.removeEventListener("seeked", handleAudioSeek);
@@ -475,6 +538,7 @@ export const LyricsView: React.FC<LyricsViewProps> = ({
     rafId = requestAnimationFrame(tick);
 
     return () => {
+      syncNowRef.current = null;
       if (rafId !== null) {
         cancelAnimationFrame(rafId);
       }
@@ -563,12 +627,26 @@ export const LyricsView: React.FC<LyricsViewProps> = ({
     [applyScrollTransform]
   );
 
+  const updateUserOffset = useCallback(
+    (nextRaw: number) => {
+      const next = Math.round(nextRaw * 10) / 10;
+      userOffsetRef.current = next;
+      setUserOffset(next);
+      saveSongOffset(currentSong, next);
+      manualScrollUntilRef.current = 0;
+      lastCharCountRef.current = -1;
+      snapNextScrollRef.current = false;
+      syncNowRef.current?.();
+    },
+    [currentSong]
+  );
+
   const handleLineClick = useCallback(
     (timeMs: number) => {
       manualScrollUntilRef.current = 0;
       lastCharCountRef.current = -1;
       snapNextScrollRef.current = false;
-      seek(timeMs / 1000);
+      seek(Math.max(0, timeMs / 1000 - DEFAULT_LYRIC_LOOKAHEAD_SEC - userOffsetRef.current));
     },
     [seek]
   );
@@ -598,10 +676,10 @@ export const LyricsView: React.FC<LyricsViewProps> = ({
     >
       {/* Terminal Titlebar (Styled exactly after Reference Image 1) */}
       <div className="px-6 pt-5 pb-3 bg-[#090d14] flex-shrink-0 z-20">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-3">
           {/* Header Line in Terminal Green (#2ecc71) font monospace */}
-          <div className="flex items-center gap-2 text-xs sm:text-sm font-mono font-semibold text-[#2ecc71]">
-            <span>📍</span>
+          <div className="flex items-center gap-2 min-w-0 flex-1 text-xs sm:text-sm font-mono font-semibold text-[#2ecc71]">
+            <span className="flex-shrink-0">📍</span>
             <span className="truncate">
               Đang phát: {currentSong.title}
               {currentSong.artists.length > 0 && ` - ${currentSong.artists.map((a) => a.name).join(", ")}`}
@@ -610,9 +688,47 @@ export const LyricsView: React.FC<LyricsViewProps> = ({
             </span>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-shrink-0">
+            {isSynced && (
+              <div
+                className={`flex items-center rounded-xs bg-[#0f151f] border transition-colors ${
+                  userOffset !== 0
+                    ? "border-[#2589f5]/70 shadow-[0_0_8px_rgba(37,137,245,0.2)]"
+                    : "border-[#1e293b]"
+                }`}
+                title="Chỉnh độ lệch thời gian lời bài hát (Mặc định +1.0s)"
+              >
+                <button
+                  onClick={() => updateUserOffset(userOffset - LYRIC_OFFSET_STEP_SEC)}
+                  title="Lùi lời -0.5s (chữ chạy trễ hơn)"
+                  className="px-1.5 py-0.5 text-[10px] font-mono font-bold text-[#8492a6] hover:text-white hover:bg-[#16202e] border-r border-[#1e293b] transition-colors cursor-pointer"
+                >
+                  -0.5s
+                </button>
+                <button
+                  onClick={() => updateUserOffset(0)}
+                  title={userOffset !== 0 ? "Nhấn để đặt lại độ trễ về 0s" : "Độ trễ người dùng đang ở 0.0s (Bù mặc định +1.0s)"}
+                  className={`px-1.5 py-0.5 text-[10px] font-mono font-bold tabular-nums transition-colors cursor-pointer ${
+                    userOffset === 0
+                      ? "text-[#475569] opacity-60 hover:opacity-100 hover:text-[#8492a6]"
+                      : userOffset > 0
+                      ? "text-[#2ecc71] hover:text-white"
+                      : "text-[#e67e22] hover:text-white"
+                  }`}
+                >
+                  {formatOffsetLabel(userOffset)}
+                </button>
+                <button
+                  onClick={() => updateUserOffset(userOffset + LYRIC_OFFSET_STEP_SEC)}
+                  title="Đẩy lời +0.5s (chữ chạy sớm hơn)"
+                  className="px-1.5 py-0.5 text-[10px] font-mono font-bold text-[#8492a6] hover:text-white hover:bg-[#16202e] border-l border-[#1e293b] transition-colors cursor-pointer"
+                >
+                  +0.5s
+                </button>
+              </div>
+            )}
             {lyricsData?.provider && (
-              <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-xs bg-[#0f151f] text-[#38bdf8] border border-[#1e293b]">
+              <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-xs bg-[#0f151f] text-[#38bdf8] border border-[#1e293b] whitespace-nowrap">
                 NGUỒN: {lyricsData.provider.toUpperCase()}
               </span>
             )}
