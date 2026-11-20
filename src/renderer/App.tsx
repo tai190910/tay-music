@@ -25,7 +25,7 @@ const MainLayout: React.FC = () => {
     setIsQueueOpen,
     togglePlay,
     seek,
-    currentTime,
+    getCurrentTime,
     duration,
     volume,
     setVolume,
@@ -76,10 +76,10 @@ const MainLayout: React.FC = () => {
         togglePlay();
       } else if (e.code === "ArrowLeft") {
         e.preventDefault();
-        seek(Math.max(0, currentTime - 5));
+        seek(Math.max(0, getCurrentTime() - 5));
       } else if (e.code === "ArrowRight") {
         e.preventDefault();
-        seek(Math.min(duration, currentTime + 5));
+        seek(Math.min(duration, getCurrentTime() + 5));
       } else if (e.code === "ArrowUp") {
         e.preventDefault();
         setVolume(Math.min(1, volume + 0.05));
@@ -98,7 +98,7 @@ const MainLayout: React.FC = () => {
     songForAddToPlaylist,
     togglePlay,
     seek,
-    currentTime,
+    getCurrentTime,
     duration,
     volume,
     setVolume,

@@ -1,6 +1,6 @@
 // src/renderer/components/PlayerBar.tsx
 
-import React from "react";
+import React, { useRef, useEffect, useCallback } from "react";
 import {
   Play,
   Pause,
@@ -28,9 +28,9 @@ function formatSeconds(sec: number): string {
 
 export const PlayerBar: React.FC = () => {
   const {
+    audioRef,
     currentSong,
     isPlaying,
-    currentTime,
     duration,
     volume,
     isMuted,
@@ -54,10 +54,77 @@ export const PlayerBar: React.FC = () => {
     setIsQueueOpen,
   } = usePlayer();
 
-  const progressPercent = duration > 0 ? (currentTime / duration) * 100 : 0;
+  const timeTextRef = useRef<HTMLSpanElement | null>(null);
+  const progressFillRef = useRef<HTMLDivElement | null>(null);
+  const rangeInputRef = useRef<HTMLInputElement | null>(null);
+  const isDraggingRef = useRef<boolean>(false);
+  const lastFormattedRef = useRef<string>("");
+  const prevSongIdRef = useRef<string | undefined>(currentSong?.id);
+
+  const syncProgressUI = useCallback(
+    (timeSec: number, fromUserInput = false) => {
+      const dur = duration || audioRef.current?.duration || 0;
+      const ratio = dur > 0 ? Math.max(0, Math.min(1, timeSec / dur)) : 0;
+      const formatted = formatSeconds(timeSec);
+
+      if (timeTextRef.current && formatted !== lastFormattedRef.current) {
+        lastFormattedRef.current = formatted;
+        timeTextRef.current.textContent = formatted;
+      }
+      if (progressFillRef.current) {
+        progressFillRef.current.style.transform = `scaleX(${ratio})`;
+      }
+      if (rangeInputRef.current && !isDraggingRef.current && !fromUserInput) {
+        rangeInputRef.current.value = String(timeSec);
+      }
+    },
+    [audioRef, duration]
+  );
+
+  // Sync progress UI directly from HTMLAudioElement events without triggering React re-renders
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio) return;
+
+    const handleAudioProgress = () => {
+      syncProgressUI(audio.currentTime || 0);
+    };
+
+    const handlePointerUp = () => {
+      if (isDraggingRef.current) {
+        isDraggingRef.current = false;
+      }
+    };
+
+    audio.addEventListener("timeupdate", handleAudioProgress);
+    audio.addEventListener("seeking", handleAudioProgress);
+    audio.addEventListener("seeked", handleAudioProgress);
+    audio.addEventListener("loadedmetadata", handleAudioProgress);
+    audio.addEventListener("ended", handleAudioProgress);
+    window.addEventListener("pointerup", handlePointerUp);
+    window.addEventListener("pointercancel", handlePointerUp);
+
+    if (prevSongIdRef.current !== currentSong?.id) {
+      prevSongIdRef.current = currentSong?.id;
+      syncProgressUI(0);
+    } else {
+      handleAudioProgress();
+    }
+
+    return () => {
+      audio.removeEventListener("timeupdate", handleAudioProgress);
+      audio.removeEventListener("seeking", handleAudioProgress);
+      audio.removeEventListener("seeked", handleAudioProgress);
+      audio.removeEventListener("loadedmetadata", handleAudioProgress);
+      audio.removeEventListener("ended", handleAudioProgress);
+      window.removeEventListener("pointerup", handlePointerUp);
+      window.removeEventListener("pointercancel", handlePointerUp);
+    };
+  }, [audioRef, syncProgressUI, currentSong?.id]);
 
   const handleSeekChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = parseFloat(e.target.value);
+    syncProgressUI(val, true);
     seek(val);
   };
 
@@ -219,25 +286,33 @@ export const PlayerBar: React.FC = () => {
 
         {/* Sharp Electric Blue Seek Bar (#2589f5) */}
         <div className="w-full flex items-center gap-2.5 text-xs">
-          <span className="w-10 text-right font-mono text-[10px] text-[#8492a6] font-semibold">
-            {formatSeconds(currentTime)}
+          <span
+            ref={timeTextRef}
+            className="w-10 text-right font-mono text-[10px] text-[#8492a6] font-semibold"
+          >
+            00:00
           </span>
 
           <div className="relative flex-1 flex items-center group py-1">
             {/* Background seek track */}
             <div className="absolute inset-x-0 h-1.5 bg-[#090d14] border border-[#1e293b] rounded-xs overflow-hidden pointer-events-none">
               <div
-                className="h-full bg-[#2589f5] transition-all duration-100 shadow-[0_0_8px_rgba(37,137,245,0.5)]"
-                style={{ width: `${progressPercent}%` }}
+                ref={progressFillRef}
+                className="h-full w-full origin-left bg-[#2589f5] transition-transform duration-100 shadow-[0_0_8px_rgba(37,137,245,0.5)]"
+                style={{ transform: "scaleX(0)", willChange: "transform" }}
               />
             </div>
 
             <input
+              ref={rangeInputRef}
               type="range"
               min={0}
               max={duration || 100}
               step={0.5}
-              value={currentTime}
+              defaultValue={0}
+              onPointerDown={() => {
+                isDraggingRef.current = true;
+              }}
               onChange={handleSeekChange}
               disabled={!currentSong}
               className="w-full h-2 opacity-0 cursor-pointer z-10"

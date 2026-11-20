@@ -1,13 +1,13 @@
 // src/renderer/context/PlayerContext.tsx
 
-import React, { createContext, useContext, useState, useEffect, useRef } from "react";
+import React, { createContext, useContext, useState, useEffect, useRef, useCallback, useMemo } from "react";
 import type { Song, LyricsData, RepeatMode, StreamInfo } from "../types.ts";
 import { extractDominantColor, DEFAULT_COLOR, type ExtractedColor } from "../utils/colorExtractor.ts";
 
 interface PlayerContextType {
+  audioRef: React.RefObject<HTMLAudioElement | null>;
   currentSong: Song | null;
   isPlaying: boolean;
-  currentTime: number;
   duration: number;
   volume: number;
   isMuted: boolean;
@@ -18,7 +18,6 @@ interface PlayerContextType {
   isLiked: boolean;
   isLoadingStream: boolean;
   lyricsData: LyricsData | null;
-  activeLyricsIndex: number;
   isLyricsOpen: boolean;
   isQueueOpen: boolean;
   error: string | null;
@@ -26,6 +25,7 @@ interface PlayerContextType {
   streamInfo: StreamInfo | null;
   resumeData: { song: Song; currentTime: number; duration: number; timestamp: number } | null;
 
+  getCurrentTime: () => number;
   playSong: (song: Song, newQueue?: Song[]) => Promise<void>;
   resumePlayback: () => Promise<void>;
   togglePlay: () => void;
@@ -49,7 +49,6 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   const [currentSong, setCurrentSong] = useState<Song | null>(null);
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
-  const [currentTime, setCurrentTime] = useState<number>(0);
   const [duration, setDuration] = useState<number>(0);
   const [volume, setVolumeState] = useState<number>(0.8);
   const [isMuted, setIsMuted] = useState<boolean>(false);
@@ -60,7 +59,6 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const [isLiked, setIsLiked] = useState<boolean>(false);
   const [isLoadingStream, setIsLoadingStream] = useState<boolean>(false);
   const [lyricsData, setLyricsData] = useState<LyricsData | null>(null);
-  const [activeLyricsIndex, setActiveLyricsIndex] = useState<number>(-1);
   const [isLyricsOpen, setIsLyricsOpen] = useState<boolean>(false);
   const [isQueueOpen, setIsQueueOpen] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
@@ -113,18 +111,14 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   // Playback timer ref to record history when appropriate
   const playedSecondsRef = useRef<number>(0);
   const lastRecordedSongIdRef = useRef<string | null>(null);
+  const lastSavedResumeSecRef = useRef<number>(-1);
 
   // Synchronized refs to avoid recreation of Audio element and event listener churn
-  const lyricsDataRef = useRef<LyricsData | null>(null);
   const queueRef = useRef<Song[]>([]);
   const queueIndexRef = useRef<number>(-1);
   const repeatModeRef = useRef<RepeatMode>("off");
   const isShuffleRef = useRef<boolean>(false);
   const currentSongRef = useRef<Song | null>(null);
-
-  useEffect(() => {
-    lyricsDataRef.current = lyricsData;
-  }, [lyricsData]);
 
   useEffect(() => {
     queueRef.current = queue;
@@ -172,36 +166,26 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
     const onTimeUpdate = () => {
       const cur = audio.currentTime;
-      setCurrentTime(cur);
-      playedSecondsRef.current = Math.floor(cur);
+      const curFloor = Math.floor(cur);
+      playedSecondsRef.current = curFloor;
 
-      // Periodically persist resume position every 5s
-      if (currentSongRef.current && cur > 3 && Math.floor(cur) % 5 === 0) {
+      // Persist resume position silently every 5s WITHOUT setting React state (prevents parent re-renders)
+      if (
+        currentSongRef.current &&
+        cur > 3 &&
+        curFloor % 5 === 0 &&
+        curFloor !== lastSavedResumeSecRef.current
+      ) {
+        lastSavedResumeSecRef.current = curFloor;
         const item = {
           song: currentSongRef.current,
           currentTime: cur,
           duration: audio.duration || 0,
           timestamp: Date.now(),
         };
-        setResumeData(item);
         try {
           localStorage.setItem("tay_music_resume", JSON.stringify(item));
         } catch {}
-      }
-
-      // Update lyrics sync from ref
-      const lines = lyricsDataRef.current?.parsed?.lines;
-      if (lines?.length) {
-        const curMs = cur * 1000;
-        let idx = -1;
-        for (let i = 0; i < lines.length; i++) {
-          if (lines[i].time <= curMs) {
-            idx = i;
-          } else {
-            break;
-          }
-        }
-        setActiveLyricsIndex(idx);
       }
     };
 
@@ -337,12 +321,12 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     };
 
     recordHistory();
+    playedSecondsRef.current = 0;
+    lastSavedResumeSecRef.current = -1;
     setCurrentSong(validSong);
     setError(null);
     setIsLoadingStream(true);
     setLyricsData(null);
-    setActiveLyricsIndex(-1);
-    setCurrentTime(0);
     setDuration(validSong.duration || 0);
 
     // Save song to SQLite
@@ -503,11 +487,14 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     loadAndPlay(queue[prevIdx]);
   };
 
-  const seek = (timeSec: number) => {
+  const getCurrentTime = useCallback(() => {
+    return audioRef.current?.currentTime ?? 0;
+  }, []);
+
+  const seek = useCallback((timeSec: number) => {
     if (!audioRef.current) return;
     audioRef.current.currentTime = timeSec;
-    setCurrentTime(timeSec);
-  };
+  }, []);
 
   const setVolume = (vol: number) => {
     const clamped = Math.max(0, Math.min(1, vol));
@@ -556,46 +543,70 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     }
   };
 
-  return (
-    <PlayerContext.Provider
-      value={{
-        currentSong,
-        isPlaying,
-        currentTime,
-        duration,
-        volume,
-        isMuted,
-        queue,
-        queueIndex,
-        repeatMode,
-        isShuffle,
-        isLiked,
-        isLoadingStream,
-        lyricsData,
-        activeLyricsIndex,
-        isLyricsOpen,
-        isQueueOpen,
-        error,
-        accentColor,
-        streamInfo,
-        resumeData,
+  const contextValue = useMemo<PlayerContextType>(
+    () => ({
+      audioRef,
+      currentSong,
+      isPlaying,
+      duration,
+      volume,
+      isMuted,
+      queue,
+      queueIndex,
+      repeatMode,
+      isShuffle,
+      isLiked,
+      isLoadingStream,
+      lyricsData,
+      isLyricsOpen,
+      isQueueOpen,
+      error,
+      accentColor,
+      streamInfo,
+      resumeData,
 
-        playSong,
-        resumePlayback,
-        togglePlay,
-        nextSong,
-        prevSong,
-        seek,
-        setVolume,
-        toggleMute,
-        toggleRepeat,
-        toggleShuffle,
-        toggleLikeCurrent,
-        setIsLyricsOpen,
-        setIsQueueOpen,
-        addToQueue,
-      }}
-    >
+      getCurrentTime,
+      playSong,
+      resumePlayback,
+      togglePlay,
+      nextSong,
+      prevSong,
+      seek,
+      setVolume,
+      toggleMute,
+      toggleRepeat,
+      toggleShuffle,
+      toggleLikeCurrent,
+      setIsLyricsOpen,
+      setIsQueueOpen,
+      addToQueue,
+    }),
+    [
+      currentSong,
+      isPlaying,
+      duration,
+      volume,
+      isMuted,
+      queue,
+      queueIndex,
+      repeatMode,
+      isShuffle,
+      isLiked,
+      isLoadingStream,
+      lyricsData,
+      isLyricsOpen,
+      isQueueOpen,
+      error,
+      accentColor,
+      streamInfo,
+      resumeData,
+      getCurrentTime,
+      seek,
+    ]
+  );
+
+  return (
+    <PlayerContext.Provider value={contextValue}>
       {children}
     </PlayerContext.Provider>
   );

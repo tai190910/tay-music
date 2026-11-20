@@ -31,8 +31,8 @@ Tại trang [Releases](https://github.com/TeXfRuV50/tay-music/releases/latest), 
 
 | Tệp cài đặt (.exe) | Phiên bản | Mô tả & Cách sử dụng |
 | :--- | :--- | :--- |
-| **`Tay Music Setup 1.1.0.exe`** | **Bản cài đặt đầy đủ (Khuyên dùng)** | Tự động cài đặt vào hệ thống Windows, tự tạo biểu tượng shortcut ngoài màn hình Desktop và trong Start Menu để tiện mở ứng dụng hàng ngày. |
-| **`Tay Music-1.1.0-Portable.exe`** | **Bản Portable (Chạy ngay)** | Không cần cài đặt. Tải về nhấp đúp chuột là phát nhạc được ngay, có thể copy vào USB để mang theo và sử dụng trên nhiều máy tính khác nhau. |
+| **`Tay Music Setup 1.2.0.exe`** | **Bản cài đặt đầy đủ (Khuyên dùng)** | Tự động cài đặt vào hệ thống Windows, tự tạo biểu tượng shortcut ngoài màn hình Desktop và trong Start Menu để tiện mở ứng dụng hàng ngày. |
+| **`Tay Music-1.2.0-Portable.exe`** | **Bản Portable (Chạy ngay)** | Không cần cài đặt. Tải về nhấp đúp chuột là phát nhạc được ngay, có thể copy vào USB để mang theo và sử dụng trên nhiều máy tính khác nhau. |
 
 > [!NOTE]
 > ### 🛡️ Lưu ý về cảnh báo bảo vệ của Windows (SmartScreen)

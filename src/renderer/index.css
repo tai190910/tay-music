@@ -73,6 +73,7 @@
   vertical-align: -0.16em;
   margin-left: 2px;
   box-shadow: 0 0 6px rgba(56, 189, 248, 0.6);
+  will-change: opacity;
   animation: blockCursorBlink 0.85s infinite;
 }
 
