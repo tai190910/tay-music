@@ -1,52 +1,44 @@
 {
   "name": "tay-music",
-  "version": "1.2.0",
-  "description": "Tày Music PC Desktop Application (Electron + React + Vite + TailwindCSS)",
-  "main": "dist-electron/main.js",
+  "version": "1.3.0",
+  "description": "Tày Music PC Desktop Application (Tauri v2 + Rust + React + Vite + TailwindCSS)",
   "type": "module",
   "scripts": {
     "dev:ui": "vite",
     "build:ui": "vite build",
-    "build:electron": "vite build --ssr electron/main.ts --outDir dist-electron && node -e \"import('node:fs').then(fs => { fs.copyFileSync('electron/preload.cjs', 'dist-electron/preload.cjs'); fs.cpSync('src/core/solver', 'dist-electron/solver', { recursive: true }); })\"",
-    "build": "npm run build:ui && npm run build:electron",
-    "start": "electron .",
-    "dist": "npm run build && electron-builder --win",
-    "dist:portable": "npm run build && electron-builder --win portable",
-    "dist:nsis": "npm run build && electron-builder --win nsis",
-    "test:stream": "node --experimental-strip-types test-stream.ts",
-    "test:core": "node --experimental-strip-types test-core.ts"
+    "tauri": "tauri",
+    "dev": "tauri dev",
+    "build": "tauri build",
+    "build:portable": "tauri build --no-bundle"
   },
   "keywords": [
     "music",
-    "electron",
+    "tauri",
+    "rust",
     "react",
     "vite",
     "tailwindcss",
     "innertube",
     "youtube",
-    "stream",
-    "reverse-engineering"
+    "stream"
   ],
   "author": "Tày Music Team",
   "license": "GPL-3.0",
   "devDependencies": {
-    "@electron/rebuild": "^4.2.1",
     "@tailwindcss/vite": "^4.3.5",
+    "@tauri-apps/cli": "^2.12.6",
     "@types/node": "^22.0.0",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.3.0",
     "autoprefixer": "^10.6.2",
-    "electron": "^45.3.3",
-    "electron-builder": "^26.18.0",
     "postcss": "^8.5.33",
     "tailwindcss": "^4.3.5",
     "typescript": "^5.7.0",
     "vite": "^8.3.8"
   },
   "dependencies": {
-    "@types/better-sqlite3": "^9.6.0",
-    "better-sqlite3": "^13.2.0",
+    "@tauri-apps/api": "^2.12.5",
     "lucide-react": "^1.73.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1"

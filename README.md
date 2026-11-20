@@ -11,7 +11,8 @@
   </a>
   <img src="https://img.shields.io/badge/License-GPL--3.0-blue.svg" alt="License: GPL-3.0" />
   <img src="https://img.shields.io/badge/Platform-Windows%2010%20%7C%2011-0078D6?logo=windows&logoColor=white" alt="Windows" />
-  <img src="https://img.shields.io/badge/Electron-45.x-47848F?logo=electron&logoColor=white" alt="Electron" />
+  <img src="https://img.shields.io/badge/Tauri-v2-FFC131?logo=tauri&logoColor=black" alt="Tauri v2" />
+  <img src="https://img.shields.io/badge/Rust-Backend-DEA584?logo=rust&logoColor=black" alt="Rust" />
   <img src="https://img.shields.io/badge/React-19.x-61DAFB?logo=react&logoColor=black" alt="React 19" />
 </p>
 
@@ -31,8 +32,8 @@ Tại trang [Releases](https://github.com/TeXfRuV50/tay-music/releases/latest), 
 
 | Tệp cài đặt (.exe) | Phiên bản | Mô tả & Cách sử dụng |
 | :--- | :--- | :--- |
-| **`Tay Music Setup 1.2.0.exe`** | **Bản cài đặt đầy đủ (Khuyên dùng)** | Tự động cài đặt vào hệ thống Windows, tự tạo biểu tượng shortcut ngoài màn hình Desktop và trong Start Menu để tiện mở ứng dụng hàng ngày. |
-| **`Tay Music-1.2.0-Portable.exe`** | **Bản Portable (Chạy ngay)** | Không cần cài đặt. Tải về nhấp đúp chuột là phát nhạc được ngay, có thể copy vào USB để mang theo và sử dụng trên nhiều máy tính khác nhau. |
+| **`Tay Music Setup 1.3.0.exe`** | **Bản cài đặt đầy đủ (Khuyên dùng)** | Tự động cài đặt vào hệ thống Windows, tự tạo biểu tượng shortcut ngoài màn hình Desktop và trong Start Menu để tiện mở ứng dụng hàng ngày. |
+| **`Tay Music-1.3.0-Portable.exe`** | **Bản Portable (Chạy ngay)** | Không cần cài đặt. Tải về nhấp đúp chuột là phát nhạc được ngay, có thể copy vào USB để mang theo và sử dụng trên nhiều máy tính khác nhau. |
 
 > [!NOTE]
 > ### 🛡️ Lưu ý về cảnh báo bảo vệ của Windows (SmartScreen)
@@ -53,7 +54,7 @@ Tại trang [Releases](https://github.com/TeXfRuV50/tay-music/releases/latest), 
 - 🎤 **Tự động đồng bộ lời bài hát Karaoke (LRC)**: Tự động tìm kiếm và đối chiếu lời bài hát từ các nguồn uy tín (**LrcLib**, **KuGou**, **NetEase**), cuộn mượt và highlight từng câu hát khớp với giai điệu theo thời gian thực.
 - 🟢 **Nhập & Đồng bộ danh sách phát từ Spotify**: Nhập 100% số lượng bài hát từ link playlist Spotify công khai (không bị chặn ở mốc 100 bài). Tích hợp thuật toán so khớp `TrackMatcher` chuẩn xác theo thời lượng và ca sĩ, kèm tính năng **Đổi phiên bản (Fix Match)** trực tiếp trên giao diện.
 - 🎨 **Giao diện Dark Mode tối ưu nhẹ máy**: Thiết kế tông tối hiện đại, tự động trích xuất màu chủ đạo từ ảnh bìa album bài hát đang phát. Tắt các hiệu ứng làm mờ nặng nề để đảm bảo máy tính cấu hình văn phòng hay tầm trung đều chạy mát và mượt mà.
-- 💾 **Lưu trữ cục bộ an toàn**: Toàn bộ lịch sử nghe nhạc, bài hát yêu thích và danh sách phát cá nhân được lưu trữ offline trên máy thông qua SQLite (`better-sqlite3`).
+- 💾 **Lưu trữ cục bộ an toàn**: Toàn bộ lịch sử nghe nhạc, bài hát yêu thích và danh sách phát cá nhân được lưu trữ offline trên máy thông qua SQLite (`rusqlite`).
 
 ---
 
@@ -63,14 +64,14 @@ Dành cho những ai muốn tự đóng gói từ mã nguồn hoặc tham gia ph
 
 ### Yêu cầu môi trường
 - Hệ điều hành: Windows 10 / 11 (64-bit)
-- [Node.js](https://nodejs.org/) phiên bản 20 trở lên
-- Trình quản lý gói `npm`
+- [Node.js](https://nodejs.org/) phiên bản 20 trở lên và `npm`
+- [Rust](https://www.rust-lang.org/) (`rustc` + `cargo`) và Microsoft C++ Build Tools
 
 ### Các bước cài đặt và khởi chạy
 
 1. **Clone mã nguồn về máy**:
    ```bash
-   git clone https://github.com/TeXfRuV50/tay-music.git
+   git clone https://github.com/tai190910/tay-music.git
    cd tay-music
    ```
 
@@ -81,21 +82,18 @@ Dành cho những ai muốn tự đóng gói từ mã nguồn hoặc tham gia ph
 
 3. **Chạy ứng dụng trong môi trường phát triển (Dev Mode)**:
    ```bash
-   npm start
+   npm run tauri dev
    ```
 
 4. **Đóng gói file thực thi `.exe` độc lập**:
    ```bash
-   # Đóng gói cả bản Setup NSIS và bản Portable:
-   npm run dist
+   # Build bản Portable (.exe chạy độc lập):
+   npm run build:portable
 
-   # Hoặc chỉ tạo riêng bản Portable:
-   npm run dist:portable
-
-   # Hoặc chỉ tạo riêng bộ cài đặt NSIS Setup:
-   npm run dist:nsis
+   # Hoặc build kèm bộ cài đặt NSIS Setup:
+   npm run tauri build
    ```
-   *Các file `.exe` sau khi build xong sẽ được tạo tại thư mục `release/`.*
+   *File Portable sau khi build được tạo tại `src-tauri/target/release/Tay Music.exe` (hoặc copy vào `release/`).*
 
 ---
 

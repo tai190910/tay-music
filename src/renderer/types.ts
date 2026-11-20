@@ -69,7 +69,7 @@ export interface MochyApi {
   searchSongs: (query: string) => Promise<Song[]>;
   getStream: (videoId: string, quality?: string) => Promise<any>;
   getLyrics: (title: string, artist?: string, duration?: number, videoId?: string) => Promise<LyricsData | null>;
-  getPlaylist: (playlistId: string) => Promise<any>;
+  getYouTubePlaylist?: (playlistId: string) => Promise<any>;
 
   // DB - Songs & Liked
   upsertSong: (song: any) => Promise<boolean>;
@@ -95,7 +95,7 @@ export interface MochyApi {
   replacePlaylistSong: (playlistId: string, oldSongId: string, newSong: any) => Promise<boolean>;
 
   // Fix Match / Track Candidates
-  getTrackCandidates: (query: { title: string; artist: string; duration?: number }) => Promise<any[]>;
+  getTrackCandidates: (query: { title: string; artist: string; duration?: number | null }) => Promise<any[]>;
 
   // DB - Lyrics
   getCachedLyrics: (songId: string) => Promise<any>;
