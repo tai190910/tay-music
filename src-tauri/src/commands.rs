@@ -6,11 +6,13 @@ use crate::models::{
     SongItem, SpotifyAccountInfo, SpotifyRemotePlaylist, TrackCandidateQuery,
 };
 use crate::proxy::LocalStreamProxy;
+use crate::soundcloud;
 use crate::spotify_webview;
 use crate::importer::{MusicImportService, SpotifyClient, TrackMatcher};
 use crate::db::MochyDatabase;
 use reqwest::Client;
 use serde_json::{json, Value};
+use std::collections::HashSet;
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter, State};
 
@@ -33,18 +35,194 @@ pub async fn youtube_search(state: State<'_, AppState>, query: String) -> Result
     }
 }
 
+fn rank_vocal_priority(query_norm: &str, items: &mut Vec<SongItem>) {
+    if items.len() <= 1 || query_norm.is_empty() {
+        return;
+    }
+    let q_padded = format!(" {query_norm} ");
+    let mut scored: Vec<(i32, usize, SongItem)> = items
+        .drain(..)
+        .enumerate()
+        .map(|(idx, item)| {
+            let mut bonus: i32 = 0;
+            let title_norm = TrackMatcher::normalize_text(&item.title);
+            let padded = format!(" {title_norm} ");
+            if padded.contains(" official ") {
+                bonus += 3;
+            }
+            if padded.contains(" audio ")
+                || padded.contains(" lyrics ")
+                || padded.contains(" lyric ")
+                || padded.contains(" loi bai hat ")
+                || title_norm.contains("歌词")
+            {
+                bonus += 2;
+            }
+            let artist_matched = item
+                .artists
+                .iter()
+                .map(|a| a.name.as_str())
+                .chain(item.author.as_deref())
+                .any(|raw| {
+                    let anorm = TrackMatcher::normalize_text(raw);
+                    !anorm.is_empty()
+                        && (q_padded.contains(&format!(" {anorm} "))
+                            || anorm
+                                .split_whitespace()
+                                .any(|tok| tok.chars().count() >= 2 && q_padded.contains(&format!(" {tok} "))))
+                });
+            if artist_matched {
+                bonus += 2;
+            }
+            (bonus - (idx as i32), idx, item)
+        })
+        .collect();
+
+    scored.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.cmp(&b.1)));
+    *items = scored.into_iter().map(|(_, _, it)| it).collect();
+}
+
 #[tauri::command]
 pub async fn youtube_search_songs(
     state: State<'_, AppState>,
     query: String,
 ) -> Result<Vec<SongItem>, String> {
-    match YouTube::search_songs(&state.inner_tube, &query).await {
-        Ok(songs) => Ok(songs),
-        Err(err) => {
-            log::error!("[IPC] youtube_search_songs error: {err}");
-            Ok(vec![])
+    let trimmed = query.trim();
+    if trimmed.is_empty() {
+        return Ok(vec![]);
+    }
+
+    let query_wants_instrumental = TrackMatcher::has_instrumental_intent(trimmed);
+    let query_norm = TrackMatcher::normalize_text(trimmed);
+
+    let (ytm_res, ytv_res) = tokio::join!(
+        YouTube::search_songs(&state.inner_tube, trimmed),
+        YouTube::search_youtube_videos(&state.inner_tube, trimmed)
+    );
+
+    let mut ytm_songs = ytm_res.unwrap_or_else(|err| {
+        log::error!("[IPC] youtube_search_songs (YTM) error: {err}");
+        vec![]
+    });
+    let ytv_raw = ytv_res.unwrap_or_else(|err| {
+        log::warn!("[IPC] youtube_search_songs (YT Video) error: {err}");
+        vec![]
+    });
+
+    let q_lower = trimmed.to_lowercase();
+    let allow_long = q_lower.contains("mix")
+        || q_lower.contains("nonstop")
+        || q_lower.contains("hour")
+        || q_lower.contains("compilation")
+        || trimmed.contains("串烧")
+        || trimmed.contains("连播");
+
+    let mut ytv_filtered: Vec<SongItem> = ytv_raw
+        .into_iter()
+        .filter(|v| allow_long || v.duration.unwrap_or(0) <= 720)
+        .collect();
+
+    let raw_ytm_backup = if query_wants_instrumental {
+        Vec::new()
+    } else {
+        ytm_songs.clone()
+    };
+    let raw_ytv_backup = if query_wants_instrumental {
+        Vec::new()
+    } else {
+        ytv_filtered.clone()
+    };
+
+    if !query_wants_instrumental {
+        ytm_songs.retain(|s| !TrackMatcher::is_instrumental_candidate(s, ""));
+        ytv_filtered.retain(|s| !TrackMatcher::is_instrumental_candidate(s, ""));
+        rank_vocal_priority(&query_norm, &mut ytv_filtered);
+    }
+
+    let is_remix_or_cover_query = [
+        "remix",
+        "dj",
+        "cover",
+        "slowed",
+        "sped up",
+        "speed up",
+        "nightcore",
+        "bootleg",
+        "mashup",
+        "vinahouse",
+        "vip",
+        "tiktok",
+        "douyin",
+        "版",
+        "慢摇",
+        "翻唱",
+        "电音",
+    ]
+    .iter()
+    .any(|kw| q_lower.contains(kw) || trimmed.contains(kw));
+
+    let mut merged = Vec::new();
+    let mut seen = HashSet::new();
+
+    fn push_unique_songs(
+        merged: &mut Vec<SongItem>,
+        seen: &mut HashSet<String>,
+        list: Vec<SongItem>,
+    ) {
+        for item in list {
+            if merged.len() >= 20 {
+                break;
+            }
+            if !item.id.is_empty() && seen.insert(item.id.clone()) {
+                merged.push(item);
+            }
         }
     }
+
+    if is_remix_or_cover_query {
+        let mut ytm_iter = ytm_songs.into_iter();
+        let mut ytv_iter = ytv_filtered.into_iter();
+        push_unique_songs(&mut merged, &mut seen, ytm_iter.by_ref().take(3).collect());
+        if merged.len() < 20 {
+            push_unique_songs(&mut merged, &mut seen, ytv_iter.by_ref().take(5).collect());
+        }
+        if merged.len() < 20 {
+            push_unique_songs(&mut merged, &mut seen, ytm_iter.collect());
+        }
+        if merged.len() < 20 {
+            push_unique_songs(&mut merged, &mut seen, ytv_iter.collect());
+        }
+    } else {
+        push_unique_songs(&mut merged, &mut seen, ytm_songs);
+        if merged.len() < 20 {
+            push_unique_songs(&mut merged, &mut seen, ytv_filtered);
+        }
+    }
+
+    let wants_sc = q_lower.contains("soundcloud")
+        || q_lower.contains("remix")
+        || q_lower.contains("dj")
+        || q_lower.contains("bootleg");
+    if (merged.len() < 4 || (wants_sc && merged.len() < 8)) && merged.len() < 20 {
+        match soundcloud::search_tracks(&state.http_client, trimmed, 5).await {
+            Ok(mut sc_tracks) => {
+                if !query_wants_instrumental {
+                    sc_tracks.retain(|s| !TrackMatcher::is_instrumental_candidate(s, ""));
+                }
+                push_unique_songs(&mut merged, &mut seen, sc_tracks);
+            }
+            Err(err) => log::warn!("[IPC] SoundCloud search fallback error: {err}"),
+        }
+    }
+
+    if merged.is_empty() && !query_wants_instrumental {
+        push_unique_songs(&mut merged, &mut seen, raw_ytm_backup);
+        if merged.len() < 20 {
+            push_unique_songs(&mut merged, &mut seen, raw_ytv_backup);
+        }
+    }
+
+    Ok(merged)
 }
 
 #[tauri::command]
@@ -54,6 +232,11 @@ pub async fn youtube_get_stream(
     quality: Option<String>,
 ) -> Result<PlaybackData, String> {
     let vid = video_id.trim().to_string();
+    if soundcloud::is_soundcloud_id(&vid) {
+        return soundcloud::resolve_playback_data(&state.http_client, &vid, &state.stream_proxy)
+            .await;
+    }
+
     if vid.is_empty() || vid == "undefined" || vid.len() != 11 {
         return Err(format!("Invalid 11-character videoId: \"{video_id}\""));
     }

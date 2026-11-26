@@ -1,241 +1,487 @@
 // src/renderer/views/HomeView.tsx
 
-import React, { useEffect, useState } from "react";
-import { Play, Flame, History, Disc, ListMusic, Sparkles } from "lucide-react";
-import type { Song, HistoryItem, Playlist } from "../types.ts";
+import React, { useEffect, useState, useMemo } from "react";
+import { Play, ChevronRight, MoreHorizontal, Disc, Plus, ListMusic } from "lucide-react";
+import { isValidTrackId, type Song, type HistoryItem, type Playlist } from "../types.ts";
 import { usePlayer } from "../context/PlayerContext.tsx";
-import { SongRow } from "../components/SongRow.tsx";
+import { TrackThumbnail } from "../components/TrackThumbnail.tsx";
+import { usePlaylistPicker } from "../components/PlaylistPickerPopover.tsx";
 
 interface HomeViewProps {
   onAddToPlaylist: (song: Song) => void;
   onNavigateSearch: () => void;
   onSelectPlaylist?: (id: string) => void;
-}
-
-function formatSec(sec?: number | null): string {
-  if (!sec || sec < 0) return "00:00";
-  const m = Math.floor(sec / 60);
-  const s = Math.floor(sec % 60);
-  return `${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
+  onOpenSpotifyImport?: () => void;
+  sidebarExpanded?: boolean;
+  playlistRefreshKey?: number;
 }
 
 export const HomeView: React.FC<HomeViewProps> = ({
-  onAddToPlaylist,
   onNavigateSearch,
   onSelectPlaylist,
+  onOpenSpotifyImport,
+  sidebarExpanded = false,
+  playlistRefreshKey = 0,
 }) => {
-  const { playSong, resumeData, resumePlayback, isPlaying } = usePlayer();
+  const { playSong, resumeData, resumePlayback, openQuickSwitch } = usePlayer();
+  const { openPlaylistPicker } = usePlaylistPicker();
   const [historyItems, setHistoryItems] = useState<HistoryItem[]>([]);
   const [trendingSongs, setTrendingSongs] = useState<Song[]>([]);
   const [playlists, setPlaylists] = useState<Playlist[]>([]);
   const [loadingTrending, setLoadingTrending] = useState(false);
+  const [heroIdx, setHeroIdx] = useState(0);
 
   useEffect(() => {
-    if (window.mochyApi) {
-      // 1. Fetch recent history
-      window.mochyApi
-        .getHistory(10, 0)
-        .then((items) => setHistoryItems(items))
-        .catch(console.error);
+    if (!window.mochyApi) return;
 
-      // 2. Fetch playlists
-      window.mochyApi
-        .getPlaylists()
-        .then((pls) => setPlaylists(pls))
-        .catch(console.error);
+    window.mochyApi
+      .getHistory(30, 0)
+      .then((items) => setHistoryItems(items || []))
+      .catch(console.error);
 
-      // 3. Fetch popular songs from YouTube Music
-      setLoadingTrending(true);
-      window.mochyApi
-        .searchSongs("Top V-Pop Hits 2026")
-        .then((songs) => {
-          if (songs && songs.length > 0) {
-            setTrendingSongs(songs.slice(0, 10));
-          }
-        })
-        .catch(console.error)
-        .finally(() => setLoadingTrending(false));
-    }
+    window.mochyApi
+      .getPlaylists()
+      .then((pls) => setPlaylists(pls || []))
+      .catch(console.error);
+
+    setLoadingTrending(true);
+    window.mochyApi
+      .searchSongs("Top V-Pop Hits 2026")
+      .then((songs) => {
+        if (songs && songs.length > 0) {
+          setTrendingSongs(songs.filter((s) => isValidTrackId(s.id)).slice(0, 12));
+        }
+      })
+      .catch(console.error)
+      .finally(() => setLoadingTrending(false));
   }, []);
 
+  useEffect(() => {
+    if (!window.mochyApi || playlistRefreshKey === 0) return;
+    window.mochyApi
+      .getPlaylists()
+      .then((pls) => setPlaylists(pls || []))
+      .catch(console.error);
+  }, [playlistRefreshKey]);
+
+  // Deduplicated recent songs & most-played aggregation from local history + trending
+  const recentSongs = useMemo<Song[]>(() => {
+    const seen = new Set<string>();
+    const out: Song[] = [];
+    for (const item of historyItems) {
+      const s = item.song;
+      const sid = s?.id || (s as any)?.videoId || item.songId;
+      if (!isValidTrackId(sid) || seen.has(sid)) continue;
+      seen.add(sid);
+      out.push({
+        id: sid,
+        videoId: sid,
+        title: s?.title || "Unknown Track",
+        artists: s?.artists?.length ? s.artists : [{ name: "Unknown" }],
+        thumbnail: s?.thumbnail || (s as any)?.thumbnailUrl || null,
+        duration: s?.duration,
+      });
+    }
+    return out;
+  }, [historyItems]);
+
+  const mostPlayedSongs = useMemo<Song[]>(() => {
+    const counts = new Map<string, { song: Song; score: number }>();
+    for (const item of historyItems) {
+      const s = item.song;
+      const sid = s?.id || (s as any)?.videoId || item.songId;
+      if (!isValidTrackId(sid)) continue;
+      const normalized: Song = {
+        id: sid,
+        videoId: sid,
+        title: s?.title || "Unknown Track",
+        artists: s?.artists?.length ? s.artists : [{ name: "Unknown" }],
+        thumbnail: s?.thumbnail || (s as any)?.thumbnailUrl || null,
+        duration: s?.duration,
+      };
+      const existing = counts.get(sid);
+      if (existing) {
+        existing.score += Math.max(1, item.playTime || 1);
+      } else {
+        counts.set(sid, { song: normalized, score: Math.max(1, item.playTime || 1) });
+      }
+    }
+    const ranked = Array.from(counts.values())
+      .sort((a, b) => b.score - a.score)
+      .map((entry) => entry.song);
+
+    const seen = new Set(ranked.map((s) => s.id));
+    for (const t of trendingSongs) {
+      if (ranked.length >= 9) break;
+      if (!seen.has(t.id)) {
+        seen.add(t.id);
+        ranked.push(t);
+      }
+    }
+    return ranked.slice(0, 9);
+  }, [historyItems, trendingSongs]);
+
+  const heroSlides = useMemo(() => {
+    const seen = new Set<string>();
+    const list: Array<{ label: string; song: Song; isResume?: boolean }> = [];
+    if (resumeData?.song && isValidTrackId(resumeData.song.id)) {
+      seen.add(resumeData.song.id);
+      list.push({ label: "On repeat", song: resumeData.song, isResume: true });
+    }
+    for (const s of [...recentSongs, ...trendingSongs]) {
+      if (list.length >= 7) break;
+      if (!seen.has(s.id)) {
+        seen.add(s.id);
+        list.push({ label: "On repeat", song: s });
+      }
+    }
+    return list;
+  }, [resumeData, recentSongs, trendingSongs]);
+
+  useEffect(() => {
+    if (heroSlides.length <= 1) return;
+    const timer = setInterval(() => {
+      setHeroIdx((prev) => (prev + 1) % heroSlides.length);
+    }, 8000);
+    return () => clearInterval(timer);
+  }, [heroSlides.length]);
+
+  const safeHeroIdx = heroSlides.length > 0 ? heroIdx % heroSlides.length : 0;
+  const activeHero = heroSlides[safeHeroIdx] ?? null;
+
+  const monthLabel = useMemo(() => {
+    const d = new Date();
+    return `THÁNG ${d.getMonth() + 1} ${d.getFullYear()}`;
+  }, []);
+
+  const contentPad = sidebarExpanded ? "pl-[288px] pr-8" : "pl-[96px] pr-8";
+  const carouselSongs = recentSongs.length > 0 ? recentSongs : trendingSongs;
+
   return (
-    <div className="flex-1 overflow-y-auto p-6 space-y-6 select-none font-sans bg-[#090d14]">
-      {/* 1. Header Box: Chọn Kịch Bản & Chế Độ (Styled after Reference Image 2) */}
-      <div className="p-4 rounded-md bg-[#0f151f] border border-[#1e293b] space-y-2 shadow-xs">
-        <div className="flex items-center gap-2">
-          <span className="text-base">🧭</span>
-          <h2 className="text-sm font-bold text-white tracking-wide uppercase font-sans">
-            TÀY MUSIC // TRUNG TÂM PHÁT NHẠC & THƯ VIỆN
-          </h2>
-        </div>
-        <p className="text-xs text-[#8492a6] font-sans leading-relaxed">
-          Nghe nhạc chất lượng cao mô phỏng luồng ExoPlayer, tự động đồng bộ lời bài hát karaoke thời gian thực và quản lý thư viện cá nhân với SQLite.
-        </p>
+    <div className="flex-1 overflow-y-auto bg-[#0a0a0c] text-[#f5f5f7] select-none pb-12">
+      {/* 1. Full-bleed Hero Banner ("On repeat") */}
+      <section className="relative w-full h-[360px] lg:h-[400px] overflow-hidden bg-[#121215]">
+        <TrackThumbnail
+          src={activeHero?.song.thumbnail}
+          videoId={activeHero ? activeHero.song.videoId || activeHero.song.id : null}
+          alt={activeHero?.song.title || "Tày Music"}
+          iconSize="xl"
+          className="absolute inset-0 w-full h-full"
+          imgClassName="object-cover object-center scale-[1.02] transition-opacity duration-500"
+        />
 
-        {/* Quick Mode Tags (Styled after tension/difficulty tags in Image 2) */}
-        <div className="flex flex-wrap items-center gap-2 pt-2 text-xs font-mono">
-          <span className="text-[10px] text-[#475569] uppercase font-bold mr-1">// CHẾ ĐỘ:</span>
-          <button
-            onClick={onNavigateSearch}
-            className="px-3 py-1 rounded-xs bg-[#16202e] border border-[#2589f5] text-[#2589f5] font-semibold hover:bg-[#2589f5]/15 transition-all cursor-pointer shadow-[0_0_8px_rgba(37,137,245,0.2)]"
-          >
-            Tìm Kiếm Mới (Search)
-          </button>
-          <span className="px-3 py-1 rounded-xs bg-[#090d14] border border-[#1e293b] text-[#8492a6]">
-            Lossless Audio: [OPUS 164KBPS]
-          </span>
-          <span className="px-3 py-1 rounded-xs bg-[#090d14] border border-[#1e293b] text-[#8492a6]">
-            Karaoke Engine: [ACTIVE]
-          </span>
-        </div>
-      </div>
+        {/* Cinematic Dark Gradient Scrim fading smoothly into #0a0a0c */}
+        <div className="absolute inset-0 bg-gradient-to-t from-[#0a0a0c] via-[#0a0a0c]/55 to-black/30" />
+        <div className="absolute inset-0 bg-gradient-to-r from-[#0a0a0c]/85 via-[#0a0a0c]/25 to-transparent" />
 
-      {/* 2. Banner "Tiếp tục nghe" (Styled exactly after "Tìm thấy tiến trình chơi dở dang!" in Image 2) */}
-      {resumeData && resumeData.song && (
-        <div className="rounded-md bg-[#0f151f] border border-[#2589f5] p-3.5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-[0_0_15px_rgba(37,137,245,0.18)] animate-fadeIn">
-          <div className="flex items-center gap-3 min-w-0 flex-1">
-            <div className="w-8 h-8 rounded-xs bg-[#2589f5]/15 border border-[#2589f5]/40 flex items-center justify-center text-[#2589f5] flex-shrink-0 text-base">
-              💾
-            </div>
-            <div className="min-w-0 flex-1">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="font-bold text-xs text-[#2589f5]">
-                  Tìm thấy tiến trình nghe dở dang!
-                </span>
-                <span className="text-[11px] font-mono text-[#8492a6] truncate">
-                  [{resumeData.song.title}] - {formatSec(resumeData.currentTime)} / {formatSec(resumeData.duration)}
-                </span>
-              </div>
-              <p className="text-[11px] text-[#38bdf8] font-mono truncate mt-0.5">
-                Ca sĩ: {resumeData.song.artists.map((a) => a.name).join(", ")}
+        {/* Bottom-left Hero Content + Bottom-right Dots */}
+        <div
+          className={`relative z-10 h-full flex flex-col justify-end pb-8 pt-20 transition-[padding] duration-[350ms] ease-[cubic-bezier(0.22,1,0.36,1)] ${contentPad}`}
+        >
+          <div className="flex items-end justify-between gap-6">
+            <div className="min-w-0 max-w-2xl space-y-2">
+              <p className="text-sm font-medium text-white/75 tracking-wide">
+                {activeHero ? activeHero.label : "Khám phá âm nhạc"}
               </p>
-            </div>
-          </div>
 
-          <button
-            onClick={resumePlayback}
-            className="px-4 py-2 rounded-xs bg-[#2ecc71] hover:bg-[#27ae60] text-black font-bold text-xs uppercase font-mono tracking-wider shadow-[0_0_10px_rgba(46,204,113,0.35)] transition-all flex items-center gap-1.5 flex-shrink-0 cursor-pointer active:scale-95"
-          >
-            <Play className="w-3.5 h-3.5 fill-black" />
-            <span>Tiếp Tục Nghe</span>
-          </button>
-        </div>
-      )}
+              <h1 className="text-3xl sm:text-4xl lg:text-[42px] font-bold text-white tracking-tight leading-[1.1] truncate">
+                {activeHero
+                  ? `${activeHero.song.title} - ${
+                      activeHero.song.artists.map((a) => a.name).join(", ") || "Tày Music"
+                    }`
+                  : "Tày Music"}
+              </h1>
 
-      {/* 3. Danh sách Playlist dạng Thẻ Ngang Xếp Chồng (Styled after Scenario Cards in Image 2) */}
-      {playlists.length > 0 && (
-        <section className="space-y-3">
-          <div className="flex items-center justify-between border-b border-[#1e293b] pb-2">
-            <div className="flex items-center gap-2 font-mono text-xs font-bold text-white tracking-wider">
-              <ListMusic className="w-4 h-4 text-[#e67e22]" />
-              <span>// DANH SÁCH PHÁT NỔI BẬT & BỘ SƯU TẬP</span>
-            </div>
-            <span className="text-[10px] font-mono text-[#475569]">
-              [{playlists.length} PLAYLISTS SẴN SÀNG]
-            </span>
-          </div>
+              <div className="pt-2 flex flex-wrap items-center gap-2.5">
+                {activeHero ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        activeHero.isResume
+                          ? resumePlayback()
+                          : playSong(activeHero.song, carouselSongs, null)
+                      }
+                      className="px-5 py-2 rounded-full bg-white/20 hover:bg-white/30 backdrop-blur-md border border-white/[0.14] text-white text-sm font-semibold flex items-center gap-2 transition-all active:scale-95 cursor-pointer shadow-lg"
+                    >
+                      <Play className="w-4 h-4 fill-white" />
+                      <span>{activeHero.isResume ? "Tiếp tục nghe" : "Play"}</span>
+                    </button>
 
-          <div className="space-y-3">
-            {playlists.slice(0, 3).map((pl, idx) => (
-              <div
-                key={pl.id}
-                onClick={() => onSelectPlaylist?.(pl.id)}
-                className="group p-4 rounded-md bg-[#0f151f] border border-[#1e293b] hover:border-[#e67e22] transition-all cursor-pointer relative shadow-sm flex flex-col justify-between gap-3"
-              >
-                {/* Top Row: Title + Amber Badge + Stars */}
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <h3 className="font-bold text-sm text-white font-sans group-hover:text-[#e67e22] transition-colors">
-                      {pl.name}
-                    </h3>
-                    {/* Badge styled like [CHIẾN DỊCH DÀI HẠN] in Image 2 */}
-                    <span className="text-[9px] font-mono font-bold px-1.5 py-0.5 rounded-xs bg-[#e67e22]/15 text-[#e67e22] border border-[#e67e22]/50 uppercase">
-                      {idx === 0 ? "BỘ SƯU TẬP ĐẶC BIỆT" : "PLAYLIST CÁ NHÂN"}
-                    </span>
-                  </div>
-
-                  {/* Star Rating (5 gold stars as shown in Image 2) */}
-                  <div className="text-[#e67e22] text-xs tracking-widest flex-shrink-0" title="Đánh giá 5 sao">
-                    ★★★★★
-                  </div>
-                </div>
-
-                {/* Subtitle in light electric blue monospace (Styled exactly after Image 2) */}
-                <p className="text-xs font-mono text-[#38bdf8] truncate">
-                  // {pl.description || `Danh sách tuyển chọn bao gồm ${pl.songCount || 0} bài hát chất lượng cao`}
-                </p>
-
-                {/* Description Text */}
-                <p className="text-xs text-[#8492a6] font-sans line-clamp-2 leading-relaxed">
-                  Trải nghiệm âm thanh mượt mà không bị bóp băng thông, lưu trữ ngoại tuyến vào cơ sở dữ liệu SQLite và hỗ trợ tua bài tức thì.
-                </p>
-
-                {/* Bottom Row: Metadata Left + Button Right */}
-                <div className="flex items-center justify-between pt-1 border-t border-[#1e293b]/50">
-                  <span className="text-[11px] font-mono text-[#475569]">
-                    Số lượng bài hát: <strong className="text-white">{pl.songCount || 0}</strong> bài
-                  </span>
-
-                  {/* Rectangular Amber Action Button (Styled like "Bắt Đầu Màn" in Image 2) */}
+                    <button
+                      type="button"
+                      onClick={() => openQuickSwitch(activeHero.song, null)}
+                      title="Tìm bản phát khác (YouTube)"
+                      className="px-4 py-2 rounded-full bg-black/35 hover:bg-black/55 backdrop-blur-md border border-white/[0.10] text-white/80 hover:text-white text-xs font-medium transition-colors cursor-pointer"
+                    >
+                      Đổi bản phát
+                    </button>
+                  </>
+                ) : (
                   <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onSelectPlaylist?.(pl.id);
-                    }}
-                    className="px-3.5 py-1.5 rounded-xs bg-[#e67e22] hover:bg-[#d35400] text-black font-bold text-xs font-mono tracking-wider transition-all shadow-[0_0_8px_rgba(230,126,34,0.3)] cursor-pointer"
+                    type="button"
+                    onClick={onNavigateSearch}
+                    className="px-5 py-2 rounded-full bg-white/20 hover:bg-white/30 backdrop-blur-md border border-white/[0.14] text-white text-sm font-semibold flex items-center gap-2 transition-all cursor-pointer"
                   >
-                    Phát Playlist
+                    <Play className="w-4 h-4 fill-white" />
+                    <span>Khám phá nhạc</span>
                   </button>
-                </div>
+                )}
               </div>
-            ))}
-          </div>
-        </section>
-      )}
+            </div>
 
-      {/* 4. Thịnh hành hôm nay (Song List Table) */}
-      <section className="space-y-3">
-        <div className="flex items-center justify-between border-b border-[#1e293b] pb-2">
-          <div className="flex items-center gap-2 font-mono text-xs font-bold text-white tracking-wider">
-            <Flame className="w-4 h-4 text-[#2ecc71]" />
-            <span>// BẢNG XẾP HẠNG THỊNH HÀNH // V-POP 2026</span>
+            {/* Pagination Dots */}
+            {heroSlides.length > 1 && (
+              <div className="flex items-center gap-1.5 flex-shrink-0 pb-1">
+                {heroSlides.map((_, idx) => (
+                  <button
+                    type="button"
+                    key={idx}
+                    onClick={() => setHeroIdx(idx)}
+                    aria-label={`Slide ${idx + 1}`}
+                    className={`h-1.5 rounded-full transition-all duration-200 cursor-pointer ${
+                      idx === safeHeroIdx ? "w-5 bg-white" : "w-1.5 bg-white/35 hover:bg-white/60"
+                    }`}
+                  />
+                ))}
+              </div>
+            )}
           </div>
-          <span className="text-[10px] font-mono text-[#2ecc71] bg-[#2ecc71]/10 px-1.5 py-0.5 rounded-xs border border-[#2ecc71]/30 font-semibold">
-            STATUS: ACTIVE
-          </span>
         </div>
+      </section>
 
-        {/* Table Column Header */}
-        <div className="flex items-center gap-3.5 px-3 py-1 text-[10px] font-mono text-[#475569] uppercase tracking-wider border-b border-[#1e293b]/60">
-          <span className="w-7 text-center">#</span>
-          <span className="w-9" />
-          <span className="flex-1">Tên bài hát / Ca sĩ</span>
-          <span className="w-12 text-right">Thời lượng</span>
-          <span className="w-20 text-right">Thao tác</span>
-        </div>
-
-        {loadingTrending ? (
-          <div className="space-y-1.5">
-            {[...Array(6)].map((_, i) => (
-              <div key={i} className="h-11 rounded-md bg-[#0f151f] border border-[#1e293b] animate-pulse" />
-            ))}
+      {/* Main Content Sections */}
+      <div className={`space-y-10 mt-2 transition-[padding] duration-[350ms] ease-[cubic-bezier(0.22,1,0.36,1)] ${contentPad}`}>
+        {/* 2. Recently Played / Trending Carousel */}
+        <section className="space-y-3.5">
+          <div className="flex items-center justify-between">
+            <h2 className="text-xl font-bold text-white tracking-tight">
+              {recentSongs.length > 0 ? "Recently played" : "Thịnh hành hôm nay"}
+            </h2>
+            <button
+              type="button"
+              onClick={onNavigateSearch}
+              className="text-xs font-medium text-white/55 hover:text-white flex items-center gap-1 transition-colors cursor-pointer"
+            >
+              <span>Khám phá thêm</span>
+              <ChevronRight className="w-3.5 h-3.5" />
+            </button>
           </div>
-        ) : (
-          <div className="space-y-1">
-            {trendingSongs
-              .filter((song) => typeof song.id === "string" && song.id.trim().length === 11)
-              .map((song, idx) => (
-                <SongRow
-                  key={song.id}
-                  song={song}
-                  index={idx}
-                  playlistContext={trendingSongs}
-                  onAddToPlaylist={onAddToPlaylist}
+
+          {loadingTrending && carouselSongs.length === 0 ? (
+            <div className="flex gap-4 overflow-hidden">
+              {[...Array(6)].map((_, i) => (
+                <div
+                  key={i}
+                  className="w-40 sm:w-44 aspect-square rounded-[16px] bg-white/[0.06] animate-pulse flex-shrink-0"
                 />
               ))}
-          </div>
+            </div>
+          ) : (
+            <div className="flex gap-4 overflow-x-auto no-scrollbar pb-1">
+              {carouselSongs.map((song) => (
+                <div key={song.id} className="w-40 sm:w-44 flex-shrink-0 group">
+                  <div className="relative aspect-square rounded-[16px] overflow-hidden bg-[#18181d] border border-white/[0.08] mb-2 shadow-lg">
+                    <button
+                      type="button"
+                      onClick={() => playSong(song, carouselSongs, null)}
+                      aria-label={`Phát ${song.title}`}
+                      className="w-full h-full block cursor-pointer"
+                    >
+                      <TrackThumbnail
+                        src={song.thumbnail}
+                        videoId={song.videoId || song.id}
+                        alt={song.title}
+                        iconSize="lg"
+                        className="w-full h-full"
+                        imgClassName="group-hover:scale-105 transition-transform duration-300"
+                      />
+                      <span className="absolute inset-0 bg-black/35 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                        <span className="w-10 h-10 rounded-full bg-white/20 backdrop-blur-md border border-white/20 flex items-center justify-center">
+                          <Play className="w-4 h-4 text-white fill-white ml-0.5" />
+                        </span>
+                      </span>
+                    </button>
+
+                    <div className="absolute top-2.5 right-2.5 flex items-center gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          openPlaylistPicker(song, e.currentTarget.getBoundingClientRect());
+                        }}
+                        title="Thêm vào playlist"
+                        aria-label="Thêm vào playlist"
+                        className="w-7 h-7 rounded-full bg-black/60 backdrop-blur-md text-white/85 hover:text-white flex items-center justify-center cursor-pointer"
+                      >
+                        <Plus className="w-4 h-4" />
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          openQuickSwitch(song, null);
+                        }}
+                        title="Tìm bản phát khác (YouTube)"
+                        aria-label="Tìm bản phát khác"
+                        className="w-7 h-7 rounded-full bg-black/60 backdrop-blur-md text-white/85 hover:text-white flex items-center justify-center cursor-pointer"
+                      >
+                        <MoreHorizontal className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+
+                  <p className="text-[13px] font-semibold text-white truncate">{song.title}</p>
+                  <p className="text-xs text-white/55 truncate mt-0.5">
+                    {song.artists.map((a) => a.name).join(", ")}
+                  </p>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+
+        {/* 3. Most Played (3-Column Numbered Ranking Grid) */}
+        {mostPlayedSongs.length > 0 && (
+          <section className="space-y-3.5">
+            <div>
+              <p className="text-[11px] font-semibold tracking-wider text-white/45 uppercase">
+                {monthLabel}
+              </p>
+              <div className="flex items-center gap-1.5 mt-0.5">
+                <h2 className="text-xl font-bold text-white tracking-tight">Most played</h2>
+                <ChevronRight className="w-4 h-4 text-white/45" />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-x-6 gap-y-2">
+              {mostPlayedSongs.map((song, idx) => (
+                <div
+                  key={`most-${song.id}-${idx}`}
+                  className="flex items-center gap-3 p-2 -mx-2 rounded-2xl hover:bg-white/[0.06] transition-colors group"
+                >
+                  <span className="w-5 text-sm font-bold text-white/55 tabular-nums text-center flex-shrink-0">
+                    {idx + 1}
+                  </span>
+
+                  <button
+                    type="button"
+                    onClick={() => playSong(song, mostPlayedSongs, null)}
+                    className="flex items-center gap-3 flex-1 min-w-0 text-left cursor-pointer"
+                  >
+                    <TrackThumbnail
+                      src={song.thumbnail}
+                      videoId={song.videoId || song.id}
+                      alt={song.title}
+                      iconSize="sm"
+                      className="w-12 h-12 rounded-xl bg-[#18181d] border border-white/[0.08] flex-shrink-0 relative"
+                    />
+
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[13px] font-semibold text-white truncate">{song.title}</p>
+                      <p className="text-xs text-white/55 truncate mt-0.5">
+                        {song.artists.map((a) => a.name).join(", ")}
+                      </p>
+                    </div>
+                  </button>
+
+                  <div className="flex items-center gap-1 flex-shrink-0">
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        openPlaylistPicker(song, e.currentTarget.getBoundingClientRect());
+                      }}
+                      title="Thêm vào playlist"
+                      aria-label="Thêm vào playlist"
+                      className="w-7 h-7 rounded-full bg-white/[0.06] hover:bg-white/[0.16] text-white/70 hover:text-white flex items-center justify-center opacity-60 group-hover:opacity-100 transition-all cursor-pointer"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => openQuickSwitch(song, null)}
+                      title="Tìm bản phát khác (YouTube)"
+                      aria-label="Tìm bản phát khác"
+                      className="w-7 h-7 rounded-full bg-white/[0.06] hover:bg-white/[0.16] text-white/70 hover:text-white flex items-center justify-center opacity-60 group-hover:opacity-100 transition-all cursor-pointer"
+                    >
+                      <MoreHorizontal className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
         )}
-      </section>
+
+        {/* 4. Playlists của bạn */}
+        <section className="space-y-3.5">
+          <div className="flex items-center justify-between">
+            <h2 className="text-xl font-bold text-white tracking-tight">Playlists của bạn</h2>
+            {onOpenSpotifyImport && (
+              <button
+                type="button"
+                onClick={onOpenSpotifyImport}
+                className="text-xs font-medium text-white/65 hover:text-white bg-white/[0.07] hover:bg-white/[0.12] border border-white/[0.08] px-3 py-1.5 rounded-full flex items-center gap-1.5 transition-all cursor-pointer"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>Nhập từ Spotify</span>
+              </button>
+            )}
+          </div>
+
+          <div className="flex gap-4 overflow-x-auto no-scrollbar pb-2">
+            {playlists.map((pl) => (
+              <button
+                type="button"
+                key={pl.id}
+                onClick={() => onSelectPlaylist?.(pl.id)}
+                className="w-48 sm:w-52 aspect-square rounded-[20px] overflow-hidden bg-[#18181d] border border-white/[0.08] hover:border-white/[0.22] relative flex-shrink-0 text-left group transition-all cursor-pointer shadow-lg"
+              >
+                <TrackThumbnail
+                  src={pl.thumbnailUrl}
+                  alt={pl.name}
+                  iconSize="xl"
+                  className="absolute inset-0 w-full h-full"
+                  imgClassName="group-hover:scale-105 transition-transform duration-300"
+                />
+
+                <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/30 to-transparent" />
+
+                <div className="relative z-10 h-full p-4 flex flex-col justify-end">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="text-sm font-bold text-white truncate">{pl.name}</p>
+                      <p className="text-xs text-white/65 truncate mt-0.5">
+                        {pl.songCount || 0} bài hát
+                      </p>
+                    </div>
+                    <ChevronRight className="w-4 h-4 text-white/60 group-hover:translate-x-0.5 transition-transform flex-shrink-0" />
+                  </div>
+                </div>
+              </button>
+            ))}
+
+            {onOpenSpotifyImport && (
+              <button
+                type="button"
+                onClick={onOpenSpotifyImport}
+                className="w-48 sm:w-52 aspect-square rounded-[20px] bg-white/[0.04] hover:bg-white/[0.08] border border-dashed border-white/[0.16] flex flex-col items-center justify-center gap-2.5 text-white/65 hover:text-white flex-shrink-0 transition-all cursor-pointer p-4 text-center"
+              >
+                <span className="w-11 h-11 rounded-full bg-white/[0.10] flex items-center justify-center">
+                  <Plus className="w-5 h-5" />
+                </span>
+                <div>
+                  <p className="text-sm font-semibold">Nhập từ Spotify</p>
+                  <p className="text-xs text-white/45 mt-0.5">Đồng bộ playlist nhanh</p>
+                </div>
+              </button>
+            )}
+          </div>
+        </section>
+      </div>
     </div>
   );
 };

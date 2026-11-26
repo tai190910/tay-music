@@ -1,5 +1,37 @@
 // src/renderer/types.ts
 
+import type { ImportResult } from "../core/importer/types.ts";
+
+export function isValidTrackId(id: unknown): id is string {
+  if (typeof id !== "string") return false;
+  const trimmed = id.trim();
+  if (!trimmed || trimmed === "undefined") return false;
+  if (trimmed.length === 11) return true;
+  return /^sc:\d{4,}$/.test(trimmed);
+}
+
+export function getSourceBadge(cand: any): { label: string; cls: string } {
+  if (
+    cand?.source === "soundcloud" ||
+    (typeof cand?.id === "string" && cand.id.startsWith("sc:"))
+  ) {
+    return {
+      label: "SC",
+      cls: "bg-[#f97316]/15 text-[#fb923c] border-[#f97316]/40",
+    };
+  }
+  if (cand?.source === "yt_video" || cand?.isVideoSong) {
+    return {
+      label: "YT VIDEO",
+      cls: "bg-[#2589f5]/15 text-[#38bdf8] border-[#2589f5]/40",
+    };
+  }
+  return {
+    label: "YT MUSIC",
+    cls: "bg-[#00ff9d]/10 text-[#00ff9d] border-[#00ff9d]/35",
+  };
+}
+
 export interface Artist {
   name: string;
   id?: string | null;
@@ -15,6 +47,7 @@ export interface Song {
   thumbnail?: string | null;
   album?: { name: string; id?: string | null } | null;
   explicit?: boolean;
+  source?: string | null;
 }
 
 export interface Playlist {
@@ -107,8 +140,8 @@ export interface MochyApi {
   spotifyLogout: () => Promise<boolean>;
   spotifyParseLink: (url: string) => Promise<any>;
   spotifyGetUserPlaylists: () => Promise<any[]>;
-  spotifyImportParsed: (parsed: any) => Promise<{ matched: number; total: number; playlistId?: string }>;
-  spotifyImportRemote: (remote: any) => Promise<{ matched: number; total: number; playlistId?: string }>;
+  spotifyImportParsed: (parsed: any) => Promise<ImportResult>;
+  spotifyImportRemote: (remote: any) => Promise<ImportResult>;
   spotifyCancelImport: () => Promise<boolean>;
   spotifyGetAutoSync: () => Promise<{ enabled: boolean; playlistIds: string[] }>;
   spotifySetAutoSync: (enabled: boolean, playlistIds?: string[]) => Promise<boolean>;

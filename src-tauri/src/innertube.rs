@@ -198,6 +198,30 @@ impl YouTubeClient {
         }
     }
 
+    pub fn web_youtube() -> Self {
+        Self {
+            kind: ClientKind::Web,
+            client_name: "WEB",
+            client_version: "2.20260708.00.00",
+            client_id: "1",
+            user_agent: USER_AGENT_WEB,
+            os_name: None,
+            os_version: None,
+            device_make: None,
+            device_model: None,
+            android_sdk_version: None,
+            login_supported: false,
+            login_required: false,
+            use_signature_timestamp: false,
+            is_embedded: false,
+            api_origin: ORIGIN_YOUTUBE,
+            api_format_version: "1",
+            client_screen: None,
+            platform: None,
+            own_visitor_id: false,
+        }
+    }
+
     pub fn web_remix() -> Self {
         Self {
             kind: ClientKind::WebRemix,
@@ -767,12 +791,36 @@ impl YouTube {
     }
 
     fn extract_thumbnail_url(thumbnails: Option<&Vec<Value>>) -> String {
-        thumbnails
-            .and_then(|arr| arr.last())
-            .and_then(|v| v.get("url"))
-            .and_then(|u| u.as_str())
-            .unwrap_or("")
-            .to_string()
+        let Some(arr) = thumbnails else {
+            return String::new();
+        };
+
+        let normalize = |raw: &str| -> String {
+            let trimmed = raw.trim();
+            if trimmed.is_empty() {
+                String::new()
+            } else if trimmed.starts_with("//") {
+                format!("https:{trimmed}")
+            } else {
+                trimmed.to_string()
+            }
+        };
+
+        // Prefer stable high-resolution thumbnails (avoid maxresdefault when hq/sd/API URL exists)
+        if let Some(stable) = arr
+            .iter()
+            .rev()
+            .filter_map(|v| v.get("url").and_then(|u| u.as_str()).map(normalize))
+            .find(|url| !url.is_empty() && !url.contains("maxresdefault"))
+        {
+            return stable;
+        }
+
+        arr.iter()
+            .rev()
+            .filter_map(|v| v.get("url").and_then(|u| u.as_str()).map(normalize))
+            .find(|url| !url.is_empty())
+            .unwrap_or_default()
     }
 
     pub fn parse_responsive_list_item(renderer: &Value) -> Option<Value> {
@@ -993,6 +1041,14 @@ impl YouTube {
                 .map(|t| t != "MUSIC_VIDEO_TYPE_ATV")
                 .unwrap_or(false);
 
+            let thumbnail = if !thumbnail_url.is_empty() {
+                Some(thumbnail_url)
+            } else if vid.len() == 11 {
+                Some(format!("https://i.ytimg.com/vi/{vid}/hqdefault.jpg"))
+            } else {
+                None
+            };
+
             let song = SongItem {
                 id: vid.to_string(),
                 video_id: vid.to_string(),
@@ -1003,10 +1059,11 @@ impl YouTube {
                 duration_text,
                 music_video_type: mvt,
                 is_video_song,
-                thumbnail: Some(thumbnail_url),
+                thumbnail,
                 explicit: is_explicit,
                 share_link: format!("https://music.youtube.com/watch?v={vid}"),
                 author: None,
+                source: Some(if is_video_song { "yt_video" } else { "ytm_song" }.to_string()),
             };
             return serde_json::to_value(song).ok();
         }
@@ -1092,12 +1149,202 @@ impl YouTube {
                 && !vid.starts_with("UC")
                 && !vid.starts_with("VL")
             {
-                if let Ok(song) = serde_json::from_value::<SongItem>(item) {
+                if let Ok(mut song) = serde_json::from_value::<SongItem>(item) {
+                    song.source = Some("ytm_song".to_string());
                     songs.push(song);
                 }
             }
         }
         Ok(songs)
+    }
+
+    fn join_runs_text(val: Option<&Value>) -> String {
+        let Some(v) = val else {
+            return String::new();
+        };
+        if let Some(simple) = v.get("simpleText").and_then(|s| s.as_str()) {
+            return simple.to_string();
+        }
+        v.get("runs")
+            .and_then(|r| r.as_array())
+            .map(|runs| {
+                runs.iter()
+                    .filter_map(|r| r.get("text").and_then(|t| t.as_str()))
+                    .collect::<Vec<_>>()
+                    .join("")
+            })
+            .unwrap_or_default()
+    }
+
+    fn parse_video_renderer(v: &Value) -> Option<SongItem> {
+        let vid = v.get("videoId")?.as_str()?.trim();
+        if vid.len() != 11 {
+            return None;
+        }
+
+        let is_live_badge = v
+            .get("badges")
+            .and_then(|b| b.as_array())
+            .map(|badges| {
+                badges.iter().any(|b| {
+                    let style = b
+                        .pointer("/metadataBadgeRenderer/style")
+                        .and_then(|s| s.as_str())
+                        .unwrap_or("");
+                    let label = b
+                        .pointer("/metadataBadgeRenderer/label")
+                        .and_then(|s| s.as_str())
+                        .unwrap_or("");
+                    style.contains("LIVE")
+                        || label.eq_ignore_ascii_case("LIVE")
+                        || label.eq_ignore_ascii_case("PREMIERE")
+                })
+            })
+            .unwrap_or(false);
+        if is_live_badge {
+            return None;
+        }
+
+        let is_live_overlay = v
+            .get("thumbnailOverlays")
+            .and_then(|o| o.as_array())
+            .map(|overlays| {
+                overlays.iter().any(|o| {
+                    o.pointer("/thumbnailOverlayTimeStatusRenderer/style")
+                        .and_then(|s| s.as_str())
+                        == Some("LIVE")
+                })
+            })
+            .unwrap_or(false);
+        if is_live_overlay {
+            return None;
+        }
+
+        let duration_str = Self::join_runs_text(v.get("lengthText")).trim().to_string();
+        if duration_str.is_empty() {
+            return None;
+        }
+        let duration = Self::parse_duration(Some(&duration_str));
+        if duration.unwrap_or(0) <= 15 {
+            return None;
+        }
+
+        let title = Self::join_runs_text(v.get("title")).trim().to_string();
+        if title.is_empty() {
+            return None;
+        }
+
+        let owner_raw = {
+            let o1 = Self::join_runs_text(v.get("ownerText"));
+            if !o1.trim().is_empty() {
+                o1
+            } else {
+                Self::join_runs_text(v.get("longBylineText"))
+            }
+        };
+        let owner = owner_raw.trim().to_string();
+        let owner_id = v
+            .pointer("/ownerText/runs/0/navigationEndpoint/browseEndpoint/browseId")
+            .or_else(|| {
+                v.pointer("/longBylineText/runs/0/navigationEndpoint/browseEndpoint/browseId")
+            })
+            .and_then(|s| s.as_str())
+            .map(|s| s.to_string());
+
+        let artists = if owner.is_empty() {
+            vec![]
+        } else {
+            vec![Artist {
+                name: owner.clone(),
+                id: owner_id,
+            }]
+        };
+        let author = if owner.is_empty() { None } else { Some(owner) };
+
+        let thumb = Self::extract_thumbnail_url(
+            v.pointer("/thumbnail/thumbnails")
+                .and_then(|t| t.as_array()),
+        );
+        let thumbnail = if !thumb.is_empty() {
+            Some(thumb)
+        } else if vid.len() == 11 {
+            Some(format!("https://i.ytimg.com/vi/{vid}/hqdefault.jpg"))
+        } else {
+            None
+        };
+
+        Some(SongItem {
+            id: vid.to_string(),
+            video_id: vid.to_string(),
+            title,
+            artists,
+            album: None,
+            duration,
+            duration_text: Some(duration_str),
+            music_video_type: Some("MUSIC_VIDEO_TYPE_UGC".to_string()),
+            is_video_song: true,
+            thumbnail,
+            explicit: false,
+            share_link: format!("https://www.youtube.com/watch?v={vid}"),
+            author,
+            source: Some("yt_video".to_string()),
+        })
+    }
+
+    pub async fn search_youtube_videos(
+        inner: &InnerTube,
+        query: &str,
+    ) -> Result<Vec<SongItem>, String> {
+        let raw = inner
+            .search(&YouTubeClient::web_youtube(), Some(query), None, None)
+            .await?;
+
+        let sections = raw
+            .pointer("/contents/twoColumnSearchResultsRenderer/primaryContents/sectionListRenderer/contents")
+            .and_then(|v| v.as_array())
+            .cloned()
+            .unwrap_or_default();
+
+        let mut videos = Vec::new();
+        let mut seen = std::collections::HashSet::new();
+
+        for section in &sections {
+            if let Some(items) = section
+                .pointer("/itemSectionRenderer/contents")
+                .and_then(|v| v.as_array())
+            {
+                for entry in items {
+                    if let Some(vr) = entry.get("videoRenderer") {
+                        if let Some(song) = Self::parse_video_renderer(vr) {
+                            if seen.insert(song.id.clone()) {
+                                videos.push(song);
+                                if videos.len() >= 15 {
+                                    return Ok(videos);
+                                }
+                            }
+                        }
+                    } else if let Some(shelf_items) = entry
+                        .pointer("/shelfRenderer/content/verticalListRenderer/items")
+                        .and_then(|v| v.as_array())
+                    {
+                        for shelf_entry in shelf_items {
+                            if let Some(vr) = shelf_entry.get("videoRenderer") {
+                                if let Some(song) = Self::parse_video_renderer(vr) {
+                                    if seen.insert(song.id.clone()) {
+                                        videos.push(song);
+                                        if videos.len() >= 15 {
+                                            return Ok(videos);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(videos)
     }
 
     pub async fn get_playlist(

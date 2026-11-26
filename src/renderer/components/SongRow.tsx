@@ -1,13 +1,27 @@
 // src/renderer/components/SongRow.tsx
 
-import React, { useState } from "react";
-import { Play, Pause, Heart, Plus, Trash2, Disc, RefreshCw } from "lucide-react";
+import React, { useState, useEffect } from "react";
+import { createPortal } from "react-dom";
+import {
+  Play,
+  Pause,
+  Heart,
+  Plus,
+  Trash2,
+  Disc,
+  RefreshCw,
+  ListPlus,
+  MoreHorizontal,
+} from "lucide-react";
 import type { Song } from "../types.ts";
 import { usePlayer } from "../context/PlayerContext.tsx";
+import { TrackThumbnail } from "./TrackThumbnail.tsx";
+import { usePlaylistPicker } from "./PlaylistPickerPopover.tsx";
 
 interface SongRowProps {
   song: Song;
   index: number;
+  playlistId?: string;
   playlistContext?: Song[];
   onAddToPlaylist?: (song: Song) => void;
   onRemoveFromPlaylist?: (songId: string) => void;
@@ -18,15 +32,35 @@ interface SongRowProps {
 export const SongRow: React.FC<SongRowProps> = ({
   song,
   index,
+  playlistId,
   playlistContext,
   onAddToPlaylist,
   onRemoveFromPlaylist,
-  onFixMatch,
   showRemoveOption,
 }) => {
-  const { currentSong, isPlaying, playSong, togglePlay } = usePlayer();
+  const { currentSong, isPlaying, playSong, togglePlay, addToQueue, openQuickSwitch } =
+    usePlayer();
+  const { openPlaylistPicker } = usePlaylistPicker();
   const [isLiked, setIsLiked] = useState<boolean>(false);
   const [hasCheckedLike, setHasCheckedLike] = useState<boolean>(false);
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
+
+  useEffect(() => {
+    const closeMenu = () => setContextMenu(null);
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") closeMenu();
+    };
+    window.addEventListener("tay-close-context-menus", closeMenu);
+    window.addEventListener("click", closeMenu);
+    window.addEventListener("scroll", closeMenu, true);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("tay-close-context-menus", closeMenu);
+      window.removeEventListener("click", closeMenu);
+      window.removeEventListener("scroll", closeMenu, true);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, []);
 
   const checkLike = async () => {
     if (!hasCheckedLike && window.mochyApi) {
@@ -41,6 +75,7 @@ export const SongRow: React.FC<SongRowProps> = ({
     if (window.mochyApi) {
       const newLiked = await window.mochyApi.toggleLike(song.id, song);
       setIsLiked(newLiked);
+      window.dispatchEvent(new CustomEvent("tay-likes-changed"));
     }
   };
 
@@ -50,141 +85,261 @@ export const SongRow: React.FC<SongRowProps> = ({
     if (isCurrent) {
       togglePlay();
     } else {
-      playSong(song, playlistContext);
+      playSong(song, playlistContext, playlistId ?? null);
     }
   };
 
+  const openMenuAt = (clientX: number, clientY: number) => {
+    window.dispatchEvent(new CustomEvent("tay-close-context-menus"));
+    const menuWidth = 260;
+    const menuHeight = 225;
+    const x = Math.max(8, Math.min(clientX, window.innerWidth - menuWidth));
+    const y = Math.max(8, Math.min(clientY, window.innerHeight - menuHeight));
+    setContextMenu({ x, y });
+  };
+
+  const handleContextMenu = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    openMenuAt(e.clientX, e.clientY);
+  };
+
   return (
-    <div
-      onMouseEnter={checkLike}
-      onClick={handlePlayClick}
-      className={`group flex items-center gap-3.5 px-3 py-2 rounded-md text-xs font-sans transition-all duration-150 cursor-pointer select-none border ${
-        isCurrent
-          ? "bg-[#16202e] text-white border-[#2589f5] shadow-[0_0_12px_rgba(37,137,245,0.25)]"
-          : "bg-[#0f151f] text-[#8492a6] hover:text-white hover:bg-[#16202e]/80 border-[#1e293b] hover:border-[#2589f5]/50"
-      }`}
-    >
-      {/* Index or Equalizer or Play Button */}
-      <div className="w-7 flex items-center justify-center flex-shrink-0 font-mono text-[11px] text-[#475569]">
-        {isCurrent && isPlaying ? (
-          <div className="flex items-end justify-center gap-0.5 h-3.5 group-hover:hidden">
-            <span className="w-0.5 bg-[#2ecc71] rounded-full animate-visualizer-1 h-full" />
-            <span className="w-0.5 bg-[#2589f5] rounded-full animate-visualizer-2 h-full" />
-            <span className="w-0.5 bg-[#2ecc71] rounded-full animate-visualizer-3 h-full" />
-          </div>
-        ) : (
-          <span className={`group-hover:hidden ${isCurrent ? "text-[#2589f5] font-bold" : ""}`}>
-            {String(index + 1).padStart(2, "0")}
-          </span>
-        )}
+    <>
+      <div
+        onMouseEnter={checkLike}
+        onContextMenu={handleContextMenu}
+        className={`group flex items-center gap-3 px-3 py-2 rounded-xl text-[13px] font-sans transition-all duration-150 select-none border ${
+          isCurrent
+            ? "bg-white/[0.11] text-white border-white/[0.12] shadow-sm"
+            : "bg-transparent text-white/70 hover:text-white hover:bg-white/[0.06] border-transparent"
+        }`}
+      >
+        {/* Main clickable area for playing track */}
         <button
-          onClick={(e) => {
-            e.stopPropagation();
-            handlePlayClick();
-          }}
-          className="hidden group-hover:block hover:scale-110 active:scale-95 transition-transform"
+          type="button"
+          onClick={handlePlayClick}
+          className="flex items-center gap-3 flex-1 min-w-0 text-left cursor-pointer focus:outline-none"
         >
-          {isCurrent && isPlaying ? (
-            <Pause className="w-3.5 h-3.5 text-[#2589f5] fill-[#2589f5]" />
-          ) : (
-            <Play className="w-3.5 h-3.5 text-[#2ecc71] fill-[#2ecc71] ml-0.5" />
-          )}
-        </button>
-      </div>
-
-      {/* Square Thumbnail with 1px border */}
-      <div className="w-9 h-9 rounded-md overflow-hidden bg-[#090d14] flex-shrink-0 border border-[#1e293b] relative group-hover:border-[#2589f5] transition-colors">
-        {song.thumbnail ? (
-          <img src={song.thumbnail} alt={song.title} className="w-full h-full object-cover" />
-        ) : (
-          <div className="w-full h-full flex items-center justify-center bg-[#090d14]">
-            <Disc className="w-4 h-4 text-[#475569]" />
+          {/* Index or Equalizer or Play Hover */}
+          <div className="w-7 flex items-center justify-center flex-shrink-0 text-xs tabular-nums text-white/40">
+            {isCurrent && isPlaying ? (
+              <span className="flex items-end justify-center gap-[2px] h-3.5 group-hover:hidden">
+                <span className="w-[2.5px] bg-white rounded-full animate-visualizer-1 h-full" />
+                <span className="w-[2.5px] bg-white/75 rounded-full animate-visualizer-2 h-full" />
+                <span className="w-[2.5px] bg-white rounded-full animate-visualizer-3 h-full" />
+              </span>
+            ) : (
+              <span className={`group-hover:hidden ${isCurrent ? "text-white font-semibold" : ""}`}>
+                {index + 1}
+              </span>
+            )}
+            <span className="hidden group-hover:flex items-center justify-center text-white">
+              {isCurrent && isPlaying ? (
+                <Pause className="w-4 h-4 fill-white" />
+              ) : (
+                <Play className="w-4 h-4 fill-white ml-0.5" />
+              )}
+            </span>
           </div>
-        )}
-      </div>
 
-      {/* Title & Artist */}
-      <div className="flex-1 min-w-0 pr-3">
-        <div className="flex items-center gap-2">
-          <span
-            className={`truncate text-xs tracking-tight transition-colors ${
-              isCurrent ? "text-[#2589f5] font-bold" : "text-white font-medium"
+          {/* Rounded Square Artwork */}
+          <TrackThumbnail
+            src={song.thumbnail}
+            videoId={song.videoId || song.id}
+            alt={song.title}
+            iconSize="sm"
+            className="w-10 h-10 rounded-lg bg-white/[0.06] flex-shrink-0 border border-white/[0.08]"
+          />
+
+          {/* Title & Artist */}
+          <div className="flex-1 min-w-0 pr-2">
+            <div className="flex items-center gap-1.5">
+              <span className="truncate text-[13px] font-semibold text-white">
+                {song.title}
+              </span>
+              {song.id.startsWith("sc:") && (
+                <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full bg-orange-500/20 text-orange-300 border border-orange-500/30 flex-shrink-0">
+                  SC
+                </span>
+              )}
+              {song.explicit && (
+                <span className="text-[9px] font-semibold px-1 py-0.5 rounded bg-white/[0.12] text-white/70 flex-shrink-0">
+                  E
+                </span>
+              )}
+            </div>
+            <span className="text-xs text-white/55 truncate block mt-0.5">
+              {song.artists.map((a) => a.name).join(", ")}
+            </span>
+          </div>
+        </button>
+
+        {/* Quick Actions */}
+        <div className="flex items-center gap-1 opacity-60 group-hover:opacity-100 focus-within:opacity-100 transition-opacity flex-shrink-0">
+          <button
+            type="button"
+            onClick={handleToggleLike}
+            title={isLiked ? "Bỏ thích" : "Yêu thích"}
+            aria-label={isLiked ? "Bỏ thích" : "Yêu thích"}
+            className={`p-1.5 rounded-full hover:bg-white/[0.10] transition-colors cursor-pointer ${
+              isLiked ? "text-[#fa233b]" : "text-white/55 hover:text-white"
             }`}
           >
-            {song.title}
-          </span>
-          {song.explicit && (
-            <span className="text-[8px] font-mono font-bold px-1 rounded bg-[#1e293b] text-[#8492a6] border border-[#334155] flex-shrink-0">
-              EXP
-            </span>
-          )}
-        </div>
-        <span className="text-[11px] text-[#38bdf8] font-mono truncate block mt-0.5">
-          {song.artists.map((a) => a.name).join(", ")}
-        </span>
-      </div>
+            <Heart className="w-3.5 h-3.5" style={{ fill: isLiked ? "currentColor" : "transparent" }} />
+          </button>
 
-      {/* Duration (Monospace) */}
-      <div className="text-[11px] font-mono text-[#8492a6] w-12 text-right">
-        {song.durationText ||
-          (song.duration && song.duration > 0
-            ? `${Math.floor(song.duration / 60).toString().padStart(2, "0")}:${(song.duration % 60).toString().padStart(2, "0")}`
-            : "--:--")}
-      </div>
-
-      {/* Action Buttons */}
-      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-        <button
-          onClick={handleToggleLike}
-          title={isLiked ? "Bỏ thích" : "Yêu thích"}
-          className="p-1 rounded-md hover:bg-[#16202e] text-[#8492a6] hover:text-[#e74c3c] transition-colors"
-        >
-          <Heart
-            className={`w-3.5 h-3.5 ${
-              isLiked ? "fill-[#e74c3c] text-[#e74c3c] opacity-100" : ""
-            }`}
-          />
-        </button>
-
-        {onAddToPlaylist && (
           <button
+            type="button"
             onClick={(e) => {
               e.stopPropagation();
-              onAddToPlaylist(song);
+              openPlaylistPicker(song, e.currentTarget.getBoundingClientRect());
             }}
             title="Thêm vào playlist"
-            className="p-1 rounded-md hover:bg-[#16202e] text-[#8492a6] hover:text-[#2589f5] transition-colors"
+            aria-label="Thêm vào playlist"
+            className="p-1.5 rounded-full hover:bg-white/[0.10] text-white/55 hover:text-white transition-colors cursor-pointer"
           >
             <Plus className="w-3.5 h-3.5" />
           </button>
-        )}
 
-        {onFixMatch && (
           <button
+            type="button"
             onClick={(e) => {
               e.stopPropagation();
-              onFixMatch(song);
+              openQuickSwitch(song, playlistId ?? null);
             }}
-            title="Đổi phiên bản / Khớp lại"
-            className="p-1 rounded-md hover:bg-[#16202e] text-[#8492a6] hover:text-[#2ecc71] transition-colors"
+            title="Tìm bản phát khác (Đổi nguồn phát YouTube)"
+            aria-label="Tìm bản phát khác"
+            className="p-1.5 rounded-full hover:bg-white/[0.10] text-white/55 hover:text-white transition-colors cursor-pointer"
           >
             <RefreshCw className="w-3.5 h-3.5" />
           </button>
-        )}
 
-        {showRemoveOption && onRemoveFromPlaylist && (
+          {showRemoveOption && onRemoveFromPlaylist && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onRemoveFromPlaylist(song.id);
+              }}
+              title="Xóa khỏi playlist"
+              aria-label="Xóa khỏi playlist"
+              className="p-1.5 rounded-full hover:bg-rose-500/20 text-white/55 hover:text-rose-400 transition-colors cursor-pointer"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+            </button>
+          )}
+
           <button
+            type="button"
             onClick={(e) => {
               e.stopPropagation();
-              onRemoveFromPlaylist(song.id);
+              const rect = e.currentTarget.getBoundingClientRect();
+              openMenuAt(rect.right - 250, rect.bottom + 6);
             }}
-            title="Xóa khỏi playlist"
-            className="p-1 rounded-md hover:bg-rose-950/40 text-[#e74c3c] hover:text-rose-300 transition-colors"
+            title="Tùy chọn khác"
+            aria-label="Tùy chọn khác"
+            className="p-1.5 rounded-full hover:bg-white/[0.10] text-white/55 hover:text-white transition-colors cursor-pointer"
           >
-            <Trash2 className="w-3.5 h-3.5" />
+            <MoreHorizontal className="w-3.5 h-3.5" />
           </button>
-        )}
+        </div>
+
+        {/* Duration */}
+        <div className="text-xs tabular-nums text-white/45 w-11 text-right flex-shrink-0">
+          {song.durationText ||
+            (song.duration && song.duration > 0
+              ? `${Math.floor(song.duration / 60)}:${(song.duration % 60).toString().padStart(2, "0")}`
+              : "--:--")}
+        </div>
       </div>
-    </div>
+
+      {contextMenu &&
+        createPortal(
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{ top: contextMenu.y, left: contextMenu.x }}
+            className="fixed z-[70] w-[256px] bg-[#1c1c22]/95 backdrop-blur-2xl border border-white/[0.12] rounded-2xl shadow-[0_18px_50px_rgba(0,0,0,0.85)] p-1.5 text-[13px] font-sans select-none animate-fadeIn"
+          >
+            <button
+              type="button"
+              onClick={() => {
+                setContextMenu(null);
+                openQuickSwitch(song, playlistId ?? null);
+              }}
+              className="w-full px-3 py-2 text-left flex items-center gap-2.5 rounded-xl text-white hover:bg-white/[0.10] font-medium transition-colors cursor-pointer"
+            >
+              <RefreshCw className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+              <span className="truncate">Tìm bản phát khác (YouTube)</span>
+            </button>
+
+            <div className="my-1 h-px bg-white/[0.08]" />
+
+            <button
+              type="button"
+              onClick={() => {
+                setContextMenu(null);
+                handlePlayClick();
+              }}
+              className="w-full px-3 py-2 text-left flex items-center gap-2.5 rounded-xl text-white/85 hover:bg-white/[0.10] hover:text-white transition-colors cursor-pointer"
+            >
+              {isCurrent && isPlaying ? (
+                <>
+                  <Pause className="w-4 h-4 flex-shrink-0" />
+                  <span>Tạm dừng</span>
+                </>
+              ) : (
+                <>
+                  <Play className="w-4 h-4 flex-shrink-0" />
+                  <span>Phát ngay</span>
+                </>
+              )}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setContextMenu(null);
+                addToQueue(song);
+              }}
+              className="w-full px-3 py-2 text-left flex items-center gap-2.5 rounded-xl text-white/85 hover:bg-white/[0.10] hover:text-white transition-colors cursor-pointer"
+            >
+              <ListPlus className="w-4 h-4 flex-shrink-0" />
+              <span>Thêm vào hàng đợi</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={(e) => {
+                const rect = e.currentTarget.getBoundingClientRect();
+                setContextMenu(null);
+                openPlaylistPicker(song, rect);
+              }}
+              className="w-full px-3 py-2 text-left flex items-center gap-2.5 rounded-xl text-white/85 hover:bg-white/[0.10] hover:text-white transition-colors cursor-pointer"
+            >
+              <Plus className="w-4 h-4 flex-shrink-0" />
+              <span>Thêm vào playlist...</span>
+            </button>
+
+            {showRemoveOption && onRemoveFromPlaylist && (
+              <>
+                <div className="my-1 h-px bg-white/[0.08]" />
+                <button
+                  type="button"
+                  onClick={() => {
+                    setContextMenu(null);
+                    onRemoveFromPlaylist(song.id);
+                  }}
+                  className="w-full px-3 py-2 text-left flex items-center gap-2.5 rounded-xl text-rose-400 hover:bg-rose-500/15 transition-colors cursor-pointer"
+                >
+                  <Trash2 className="w-4 h-4 flex-shrink-0" />
+                  <span>Xóa khỏi playlist</span>
+                </button>
+              </>
+            )}
+          </div>,
+          document.body
+        )}
+    </>
   );
 };

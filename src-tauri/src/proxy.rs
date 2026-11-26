@@ -18,6 +18,8 @@ use tokio::time::{sleep, Duration};
 use url::Url;
 
 const CHUNK_SIZE: u64 = 512 * 1024; // 512 KB
+const USER_AGENT_WEB: &str =
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:140.0) Gecko/20100101 Firefox/140.0";
 
 pub fn with_rn_param(url_str: &str, rn: u64) -> String {
     static RN_RE: OnceLock<Regex> = OnceLock::new();
@@ -44,6 +46,11 @@ struct StreamQuery {
     mime: Option<String>,
 }
 
+#[derive(Deserialize)]
+struct UrlQuery {
+    url: Option<String>,
+}
+
 impl LocalStreamProxy {
     pub async fn start(client: Client) -> Result<Self, String> {
         let listener = TcpListener::bind("127.0.0.1:0")
@@ -55,11 +62,14 @@ impl LocalStreamProxy {
             .port();
 
         let state = Arc::new(ProxyState {
+            port,
             client: client.clone(),
         });
 
         let app = Router::new()
             .route("/stream", any(handle_stream))
+            .route("/hls", any(handle_hls))
+            .route("/raw", any(handle_raw))
             .with_state(state);
 
         tokio::spawn(async move {
@@ -70,6 +80,22 @@ impl LocalStreamProxy {
         });
 
         Ok(Self { port, client })
+    }
+
+    pub fn get_hls_proxy_url(&self, target_url: &str) -> String {
+        format!(
+            "http://127.0.0.1:{}/hls?url={}",
+            self.port,
+            urlencoding::encode(target_url)
+        )
+    }
+
+    pub fn get_raw_proxy_url(&self, target_url: &str) -> String {
+        format!(
+            "http://127.0.0.1:{}/raw?url={}",
+            self.port,
+            urlencoding::encode(target_url)
+        )
     }
 
     pub fn get_proxy_url(
@@ -105,6 +131,7 @@ impl LocalStreamProxy {
 }
 
 struct ProxyState {
+    port: u16,
     client: Client,
 }
 
@@ -403,4 +430,232 @@ fn tokio_stream_from_mpsc(
     mut rx: mpsc::Receiver<Result<Bytes, std::io::Error>>,
 ) -> impl futures_util::Stream<Item = Result<Bytes, std::io::Error>> + Send {
     futures_util::stream::poll_fn(move |cx| rx.poll_recv(cx)).fuse()
+}
+
+fn is_http_url(url_str: &str) -> bool {
+    url_str.starts_with("https://") || url_str.starts_with("http://")
+}
+
+fn resolve_m3u8_uri(base: Option<&Url>, raw: &str) -> String {
+    let trimmed = raw.trim();
+    if is_http_url(trimmed) {
+        return trimmed.to_string();
+    }
+    if let Some(b) = base {
+        if let Ok(joined) = b.join(trimmed) {
+            return joined.to_string();
+        }
+    }
+    trimmed.to_string()
+}
+
+async fn handle_hls(
+    method: Method,
+    Query(query): Query<UrlQuery>,
+    State(state): State<Arc<ProxyState>>,
+) -> Response {
+    if method == Method::OPTIONS {
+        return cors_builder(StatusCode::NO_CONTENT)
+            .body(Body::empty())
+            .unwrap();
+    }
+
+    let Some(target_url) = query.url.filter(|u| is_http_url(u.trim())) else {
+        return cors_builder(StatusCode::BAD_REQUEST)
+            .body(Body::from("Invalid or missing target url parameter"))
+            .unwrap();
+    };
+    let target_url = target_url.trim().to_string();
+
+    let res = match state
+        .client
+        .get(&target_url)
+        .header(header::USER_AGENT, USER_AGENT_WEB)
+        .header(header::ACCEPT, "*/*")
+        .send()
+        .await
+    {
+        Ok(r) => r,
+        Err(err) => {
+            log::error!("[StreamProxy] HLS playlist fetch error: {err}");
+            return cors_builder(StatusCode::BAD_GATEWAY)
+                .body(Body::from(format!("Upstream error: {err}")))
+                .unwrap();
+        }
+    };
+
+    if !res.status().is_success() {
+        let code = StatusCode::from_u16(res.status().as_u16()).unwrap_or(StatusCode::BAD_GATEWAY);
+        return cors_builder(code)
+            .body(Body::from(format!("Upstream HTTP {}", res.status())))
+            .unwrap();
+    }
+
+    let playlist_text = match res.text().await {
+        Ok(t) => t,
+        Err(err) => {
+            return cors_builder(StatusCode::BAD_GATEWAY)
+                .body(Body::from(format!("Failed reading M3U8: {err}")))
+                .unwrap();
+        }
+    };
+
+    static ATTR_URI_RE: OnceLock<Regex> = OnceLock::new();
+    let attr_uri_re = ATTR_URI_RE.get_or_init(|| Regex::new(r#"URI="([^"]+)""#).unwrap());
+
+    let base_url = Url::parse(&target_url).ok();
+    let port = state.port;
+    let mut rewritten = Vec::new();
+
+    for raw_line in playlist_text.lines() {
+        let line = raw_line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        if line.starts_with('#') {
+            if attr_uri_re.is_match(line) {
+                let replaced = attr_uri_re.replace_all(line, |caps: &regex::Captures<'_>| {
+                    let resolved = resolve_m3u8_uri(base_url.as_ref(), &caps[1]);
+                    format!(
+                        r#"URI="http://127.0.0.1:{port}/raw?url={}""#,
+                        urlencoding::encode(&resolved)
+                    )
+                });
+                rewritten.push(replaced.into_owned());
+            } else {
+                rewritten.push(line.to_string());
+            }
+        } else {
+            let resolved = resolve_m3u8_uri(base_url.as_ref(), line);
+            rewritten.push(format!(
+                "http://127.0.0.1:{port}/raw?url={}",
+                urlencoding::encode(&resolved)
+            ));
+        }
+    }
+
+    let body_text = rewritten.join("\n") + "\n";
+
+    cors_builder(StatusCode::OK)
+        .header(header::CONTENT_TYPE, "application/vnd.apple.mpegurl")
+        .header(header::CACHE_CONTROL, "no-cache")
+        .body(Body::from(body_text))
+        .unwrap()
+}
+
+async fn handle_raw(
+    method: Method,
+    headers: HeaderMap,
+    Query(query): Query<UrlQuery>,
+    State(state): State<Arc<ProxyState>>,
+) -> Response {
+    if method == Method::OPTIONS {
+        return cors_builder(StatusCode::NO_CONTENT)
+            .body(Body::empty())
+            .unwrap();
+    }
+
+    let Some(target_url) = query.url.filter(|u| is_http_url(u.trim())) else {
+        return cors_builder(StatusCode::BAD_REQUEST)
+            .body(Body::from("Invalid or missing target url parameter"))
+            .unwrap();
+    };
+    let target_url = target_url.trim().to_string();
+
+    let incoming_range = headers
+        .get(header::RANGE)
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.to_string());
+
+    let mut req = state
+        .client
+        .get(&target_url)
+        .header(header::USER_AGENT, USER_AGENT_WEB)
+        .header(header::ACCEPT, "*/*")
+        .header(header::ACCEPT_ENCODING, "identity");
+
+    if let Some(ref range) = incoming_range {
+        req = req.header(header::RANGE, range);
+    } else if method == Method::HEAD {
+        // SoundCloud CloudFront rejects HEAD with 405, so probe byte 0 via GET.
+        req = req.header(header::RANGE, "bytes=0-0");
+    }
+
+    let upstream = match req.send().await {
+        Ok(r) => r,
+        Err(err) => {
+            log::error!("[StreamProxy] Raw upstream fetch error: {err}");
+            return cors_builder(StatusCode::BAD_GATEWAY)
+                .body(Body::from(format!("Upstream error: {err}")))
+                .unwrap();
+        }
+    };
+
+    let upstream_status =
+        StatusCode::from_u16(upstream.status().as_u16()).unwrap_or(StatusCode::BAD_GATEWAY);
+    let upstream_headers = upstream.headers().clone();
+
+    let ct = upstream_headers
+        .get(header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("application/octet-stream");
+
+    if method == Method::HEAD {
+        let mut total_len = None;
+        if let Some(cr) = upstream_headers
+            .get(header::CONTENT_RANGE)
+            .and_then(|v| v.to_str().ok())
+        {
+            if let Some(slash) = cr.rfind('/') {
+                if let Ok(len) = cr[slash + 1..].trim().parse::<u64>() {
+                    total_len = Some(len);
+                }
+            }
+        }
+        if total_len.is_none() {
+            if let Some(cl) = upstream_headers
+                .get(header::CONTENT_LENGTH)
+                .and_then(|v| v.to_str().ok())
+                .and_then(|s| s.trim().parse::<u64>().ok())
+            {
+                total_len = Some(cl);
+            }
+        }
+
+        let mut builder = cors_builder(if upstream.status().is_success() {
+            StatusCode::OK
+        } else {
+            upstream_status
+        })
+        .header(header::CONTENT_TYPE, ct)
+        .header(header::CACHE_CONTROL, "no-cache");
+
+        if let Some(len) = total_len {
+            builder = builder.header(header::CONTENT_LENGTH, len.to_string());
+        }
+        return builder.body(Body::empty()).unwrap();
+    }
+
+    let mut builder = cors_builder(upstream_status)
+        .header(header::CONTENT_TYPE, ct)
+        .header(header::CACHE_CONTROL, "no-cache");
+
+    if let Some(cl) = upstream_headers
+        .get(header::CONTENT_LENGTH)
+        .and_then(|v| v.to_str().ok())
+    {
+        builder = builder.header(header::CONTENT_LENGTH, cl);
+    }
+    if let Some(cr) = upstream_headers
+        .get(header::CONTENT_RANGE)
+        .and_then(|v| v.to_str().ok())
+    {
+        builder = builder.header(header::CONTENT_RANGE, cr);
+    }
+
+    let byte_stream = upstream
+        .bytes_stream()
+        .map(|item| item.map_err(std::io::Error::other));
+
+    builder.body(Body::from_stream(byte_stream)).unwrap()
 }

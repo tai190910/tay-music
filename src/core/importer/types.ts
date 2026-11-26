@@ -52,3 +52,12 @@ export interface ImportProgress {
   playlistName?: string;
   error?: string;
 }
+
+export interface ImportResult {
+  matched: number;
+  total: number;
+  playlistId?: string | null;
+  playlistName?: string | null;
+  isLiked?: boolean;
+  unmatchedTracks?: ImportedTrack[];
+}

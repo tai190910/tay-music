@@ -3,6 +3,7 @@
 import React from "react";
 import { X, Play, Music, ListMusic } from "lucide-react";
 import { usePlayer } from "../context/PlayerContext.tsx";
+import { TrackThumbnail } from "./TrackThumbnail.tsx";
 
 export const QueueDrawer: React.FC = () => {
   const {
@@ -58,19 +59,13 @@ export const QueueDrawer: React.FC = () => {
                     : "hover:bg-[#16202e]/60 text-[#8492a6] border-transparent hover:border-[#1e293b]"
                 }`}
               >
-                <div className="w-8 h-8 rounded-xs bg-[#090d14] overflow-hidden flex-shrink-0 border border-[#1e293b] relative">
-                  {song.thumbnail ? (
-                    <img
-                      src={song.thumbnail}
-                      alt={song.title}
-                      className="w-full h-full object-cover"
-                    />
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center">
-                      <Music className="w-4 h-4 text-[#475569]" />
-                    </div>
-                  )}
-                </div>
+                <TrackThumbnail
+                  src={song.thumbnail}
+                  videoId={song.videoId || song.id}
+                  alt={song.title}
+                  iconSize="xs"
+                  className="w-8 h-8 rounded-xs bg-[#090d14] flex-shrink-0 border border-[#1e293b] relative"
+                />
 
                 <div className="flex-1 min-w-0">
                   <p

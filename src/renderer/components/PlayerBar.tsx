@@ -9,68 +9,59 @@ import {
   Repeat,
   Repeat1,
   Shuffle,
-  Volume2,
-  VolumeX,
-  Mic2,
+  MessageSquareQuote,
   ListMusic,
   Heart,
   Loader2,
-  Disc,
+  RefreshCw,
+  Maximize2,
+  Plus,
 } from "lucide-react";
 import { usePlayer } from "../context/PlayerContext.tsx";
+import { TrackThumbnail } from "./TrackThumbnail.tsx";
+import { usePlaylistPicker } from "./PlaylistPickerPopover.tsx";
+import appIcon from "../assets/app-icon.png";
 
-function formatSeconds(sec: number): string {
-  if (isNaN(sec) || sec < 0) return "00:00";
-  const m = Math.floor(sec / 60);
-  const s = Math.floor(sec % 60);
-  return `${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
+interface PlayerBarProps {
+  sidebarExpanded?: boolean;
 }
 
-export const PlayerBar: React.FC = () => {
+export const PlayerBar: React.FC<PlayerBarProps> = ({ sidebarExpanded = false }) => {
   const {
     audioRef,
+    activeDeck,
     currentSong,
     isPlaying,
     duration,
-    volume,
-    isMuted,
     repeatMode,
     isShuffle,
     isLiked,
     isLoadingStream,
-    isLyricsOpen,
-    isQueueOpen,
-    streamInfo,
+    rightDrawerTab,
+    activePlaylistId,
     togglePlay,
     nextSong,
     prevSong,
     seek,
-    setVolume,
-    toggleMute,
     toggleRepeat,
     toggleShuffle,
     toggleLikeCurrent,
-    setIsLyricsOpen,
-    setIsQueueOpen,
+    toggleRightDrawer,
+    setIsFullscreenPlayerOpen,
+    openQuickSwitch,
   } = usePlayer();
+  const { openPlaylistPicker } = usePlaylistPicker();
 
-  const timeTextRef = useRef<HTMLSpanElement | null>(null);
   const progressFillRef = useRef<HTMLDivElement | null>(null);
   const rangeInputRef = useRef<HTMLInputElement | null>(null);
   const isDraggingRef = useRef<boolean>(false);
-  const lastFormattedRef = useRef<string>("");
   const prevSongIdRef = useRef<string | undefined>(currentSong?.id);
 
   const syncProgressUI = useCallback(
     (timeSec: number, fromUserInput = false) => {
       const dur = duration || audioRef.current?.duration || 0;
       const ratio = dur > 0 ? Math.max(0, Math.min(1, timeSec / dur)) : 0;
-      const formatted = formatSeconds(timeSec);
 
-      if (timeTextRef.current && formatted !== lastFormattedRef.current) {
-        lastFormattedRef.current = formatted;
-        timeTextRef.current.textContent = formatted;
-      }
       if (progressFillRef.current) {
         progressFillRef.current.style.transform = `scaleX(${ratio})`;
       }
@@ -81,7 +72,7 @@ export const PlayerBar: React.FC = () => {
     [audioRef, duration]
   );
 
-  // Sync progress UI directly from HTMLAudioElement events without triggering React re-renders
+  // Sync progress bar directly from HTMLAudioElement events without triggering React re-renders
   useEffect(() => {
     const audio = audioRef.current;
     if (!audio) return;
@@ -120,7 +111,7 @@ export const PlayerBar: React.FC = () => {
       window.removeEventListener("pointerup", handlePointerUp);
       window.removeEventListener("pointercancel", handlePointerUp);
     };
-  }, [audioRef, syncProgressUI, currentSong?.id]);
+  }, [audioRef, syncProgressUI, currentSong?.id, activeDeck]);
 
   const handleSeekChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = parseFloat(e.target.value);
@@ -128,140 +119,174 @@ export const PlayerBar: React.FC = () => {
     seek(val);
   };
 
-  const handleVolumeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const val = parseFloat(e.target.value);
-    setVolume(val);
-  };
-
   return (
-    <footer className="h-20 bg-[#0f151f] border-t border-[#1e293b] px-4 py-2 flex items-center justify-between select-none z-30 flex-shrink-0 relative shadow-[0_-4px_20px_rgba(0,0,0,0.6)] font-sans">
-      {/* 1. Left Section: Song Info & Like */}
-      <div className="flex items-center gap-3 w-1/4 min-w-[210px]">
+    <div
+      className={`pointer-events-none absolute top-3.5 inset-x-0 z-40 flex justify-center transition-[padding] duration-[350ms] ease-[cubic-bezier(0.22,1,0.36,1)] ${
+        sidebarExpanded ? "pl-[284px] pr-4" : "pl-[88px] pr-4"
+      }`}
+    >
+      <header
+        aria-label="Dynamic Island Player"
+        className="max-w-full select-none pointer-events-auto"
+      >
+      <div className="relative rounded-full bg-[#202025]/82 backdrop-blur-2xl border border-white/[0.11] shadow-[0_14px_45px_rgba(0,0,0,0.68)] px-3 py-1.5 flex items-center gap-2.5 sm:gap-3">
+        {/* Track Thumbnail + Metadata (opens Fullscreen Player) */}
         {currentSong ? (
-          <>
-            {/* Square Album Cover with 1px border */}
-            <div
-              onClick={() => setIsLyricsOpen((prev) => !prev)}
-              className="relative w-12 h-12 rounded-md overflow-hidden bg-[#090d14] border border-[#1e293b] hover:border-[#2589f5] flex-shrink-0 cursor-pointer group shadow-sm transition-all"
-              title="Nhấn để xem lời bài hát"
+          <div className="flex items-center gap-2.5 min-w-0">
+            <button
+              type="button"
+              onClick={() => setIsFullscreenPlayerOpen(true)}
+              title="Mở trình phát toàn màn hình"
+              className="flex items-center gap-2.5 min-w-0 text-left group cursor-pointer rounded-full focus:outline-none"
             >
-              {currentSong.thumbnail ? (
-                <img
-                  src={currentSong.thumbnail}
-                  alt={currentSong.title}
-                  className="w-full h-full object-cover group-hover:scale-105 transition-transform"
-                />
-              ) : (
-                <div className="w-full h-full flex items-center justify-center bg-[#090d14]">
-                  <Disc className="w-5 h-5 text-[#475569]" />
+              <TrackThumbnail
+                src={currentSong.thumbnail}
+                videoId={currentSong.videoId || currentSong.id}
+                alt={currentSong.title}
+                iconSize="sm"
+                className="w-9 h-9 rounded-xl bg-white/[0.06] border border-white/[0.10] flex-shrink-0 shadow-sm relative"
+                imgClassName="group-hover:scale-105 transition-transform duration-200"
+              />
+
+              <div className="flex flex-col min-w-0 max-w-[140px] sm:max-w-[175px]">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[13px] font-semibold text-white truncate group-hover:text-white/90">
+                    {currentSong.title}
+                  </span>
+                  {isPlaying && (
+                    <span className="flex items-end gap-[2px] h-2.5 flex-shrink-0" aria-hidden="true">
+                      <span className="w-[2px] bg-white/80 rounded-full animate-visualizer-1 h-full" />
+                      <span className="w-[2px] bg-white/60 rounded-full animate-visualizer-2 h-full" />
+                      <span className="w-[2px] bg-white/80 rounded-full animate-visualizer-3 h-full" />
+                    </span>
+                  )}
                 </div>
-              )}
-            </div>
-
-            <div className="flex flex-col min-w-0 pr-2">
-              <div className="flex items-center gap-1.5">
-                <span
-                  onClick={() => setIsLyricsOpen((prev) => !prev)}
-                  className="text-xs font-bold text-white truncate cursor-pointer hover:text-[#2589f5] transition-colors"
-                  title={currentSong.title}
-                >
-                  {currentSong.title}
-                </span>
-
-                {/* Equalizer Bars */}
-                {isPlaying && (
-                  <div className="flex items-end gap-0.5 h-3 flex-shrink-0">
-                    <span className="w-0.5 bg-[#2ecc71] rounded-full animate-visualizer-1 h-full" />
-                    <span className="w-0.5 bg-[#2589f5] rounded-full animate-visualizer-2 h-full" />
-                    <span className="w-0.5 bg-[#2ecc71] rounded-full animate-visualizer-3 h-full" />
-                  </div>
-                )}
-              </div>
-
-              <div className="flex items-center gap-2 mt-0.5">
-                <span className="text-[11px] text-[#8492a6] truncate font-mono">
+                <span className="text-[11px] text-white/55 truncate">
                   {currentSong.artists.map((a) => a.name).join(", ") || "Nghệ sĩ chưa rõ"}
                 </span>
               </div>
-            </div>
-
-            <button
-              onClick={toggleLikeCurrent}
-              title={isLiked ? "Bỏ thích" : "Yêu thích"}
-              className="p-1.5 rounded-md text-[#8492a6] hover:text-[#e74c3c] hover:bg-[#16202e] border border-transparent hover:border-[#1e293b] transition-all flex-shrink-0 ml-auto cursor-pointer"
-            >
-              <Heart
-                className="w-4 h-4 transition-transform active:scale-125"
-                style={{
-                  color: isLiked ? "#e74c3c" : undefined,
-                  fill: isLiked ? "#e74c3c" : "transparent",
-                }}
-              />
             </button>
-          </>
+
+            {/* Like + Add to Playlist + Quick Switch micro buttons */}
+            <div className="flex items-center gap-0.5 flex-shrink-0">
+              <button
+                type="button"
+                onClick={toggleLikeCurrent}
+                title={isLiked ? "Bỏ thích" : "Yêu thích"}
+                aria-label={isLiked ? "Bỏ thích" : "Yêu thích"}
+                className={`p-1.5 rounded-full transition-colors cursor-pointer ${
+                  isLiked
+                    ? "text-[#fa233b] hover:bg-white/[0.08]"
+                    : "text-white/50 hover:text-white hover:bg-white/[0.08]"
+                }`}
+              >
+                <Heart
+                  className="w-3.5 h-3.5"
+                  style={{ fill: isLiked ? "currentColor" : "transparent" }}
+                />
+              </button>
+
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  openPlaylistPicker(currentSong, e.currentTarget.getBoundingClientRect());
+                }}
+                title="Thêm bài đang phát vào playlist"
+                aria-label="Thêm vào playlist"
+                className="p-1.5 rounded-full text-white/55 hover:text-white hover:bg-white/[0.08] transition-colors cursor-pointer"
+              >
+                <Plus className="w-3.5 h-3.5" />
+              </button>
+
+              <button
+                type="button"
+                onClick={() => openQuickSwitch(currentSong, activePlaylistId)}
+                title="Tìm bản phát khác (YouTube)"
+                aria-label="Tìm bản phát khác"
+                className="hidden sm:flex p-1.5 rounded-full text-white/50 hover:text-white hover:bg-white/[0.08] transition-colors cursor-pointer"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
         ) : (
-          <div className="flex items-center gap-2 text-[11px] font-mono text-[#475569]">
-            <Disc className="w-4 h-4 opacity-40" />
-            <span>// CHƯA PHÁT NHẠC</span>
+          <div className="flex items-center gap-2.5 pr-1 min-w-0">
+            <img
+              src={appIcon}
+              alt="Tày Music"
+              className="w-9 h-9 rounded-xl object-cover flex-shrink-0 border border-white/[0.12] shadow-sm"
+            />
+            <div className="flex flex-col min-w-0 pr-1">
+              <span className="text-[13px] font-semibold text-white/85 truncate">Tày Music</span>
+              <span className="text-[11px] text-white/45 truncate">Chọn bài hát để phát</span>
+            </div>
           </div>
         )}
-      </div>
 
-      {/* 2. Center Section: Playback Controls & Electric Blue Seek Bar */}
-      <div className="flex flex-col items-center justify-center max-w-xl w-2/4 px-4">
-        {/* Buttons */}
-        <div className="flex items-center gap-3 mb-1">
-          {/* Shuffle */}
+        {/* Primary Transport Controls */}
+        <div className="flex items-center gap-0.5 flex-shrink-0">
           <button
+            type="button"
+            onClick={prevSong}
+            disabled={!currentSong}
+            title="Bài trước"
+            aria-label="Bài trước"
+            className="w-8 h-8 rounded-full flex items-center justify-center text-white/75 hover:text-white hover:bg-white/[0.08] disabled:opacity-30 transition-colors cursor-pointer"
+          >
+            <SkipBack className="w-4 h-4 fill-current" />
+          </button>
+
+          <button
+            type="button"
+            onClick={togglePlay}
+            disabled={!currentSong && !isLoadingStream}
+            title={isPlaying ? "Tạm dừng" : "Phát"}
+            aria-label={isPlaying ? "Tạm dừng" : "Phát"}
+            className="w-8 h-8 rounded-full flex items-center justify-center bg-white/[0.14] hover:bg-white/[0.24] text-white disabled:opacity-35 transition-all active:scale-95 cursor-pointer"
+          >
+            {isLoadingStream ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : isPlaying ? (
+              <Pause className="w-4 h-4 fill-current" />
+            ) : (
+              <Play className="w-4 h-4 fill-current ml-0.5" />
+            )}
+          </button>
+
+          <button
+            type="button"
+            onClick={nextSong}
+            disabled={!currentSong}
+            title="Bài tiếp theo"
+            aria-label="Bài tiếp theo"
+            className="w-8 h-8 rounded-full flex items-center justify-center text-white/75 hover:text-white hover:bg-white/[0.08] disabled:opacity-30 transition-colors cursor-pointer"
+          >
+            <SkipForward className="w-4 h-4 fill-current" />
+          </button>
+        </div>
+
+        {/* Hairline Vertical Divider */}
+        <div className="w-px h-4 bg-white/[0.12] flex-shrink-0" />
+
+        {/* Secondary Controls: Shuffle, Repeat, Queue Drawer, Lyrics Drawer, Fullscreen */}
+        <div className="flex items-center gap-0.5 flex-shrink-0">
+          <button
+            type="button"
             onClick={toggleShuffle}
             title={isShuffle ? "Tắt trộn bài" : "Bật trộn bài"}
-            className={`p-1.5 rounded-md transition-all border ${
+            aria-label="Trộn bài"
+            className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors cursor-pointer ${
               isShuffle
-                ? "bg-[#16202e] text-[#2589f5] border-[#2589f5] shadow-[0_0_8px_rgba(37,137,245,0.25)]"
-                : "text-[#8492a6] hover:text-white border-transparent hover:border-[#1e293b] hover:bg-[#16202e]"
+                ? "bg-white/[0.16] text-white"
+                : "text-white/55 hover:text-white hover:bg-white/[0.08]"
             }`}
           >
             <Shuffle className="w-3.5 h-3.5" />
           </button>
 
-          {/* Previous */}
           <button
-            onClick={prevSong}
-            title="Bài trước"
-            disabled={!currentSong}
-            className="p-1.5 rounded-md text-[#8492a6] hover:text-white transition-all disabled:opacity-30 border border-transparent hover:border-[#1e293b] hover:bg-[#16202e]"
-          >
-            <SkipBack className="w-4 h-4" />
-          </button>
-
-          {/* Play / Pause button in Terminal Green (#2ecc71) */}
-          <button
-            onClick={togglePlay}
-            disabled={!currentSong && !isLoadingStream}
-            title={isPlaying ? "Tạm dừng" : "Phát"}
-            className="w-8 h-8 rounded-md bg-[#2ecc71] text-black hover:bg-[#27ae60] active:scale-95 transition-all shadow-[0_0_12px_rgba(46,204,113,0.35)] flex items-center justify-center disabled:opacity-40 disabled:shadow-none font-bold cursor-pointer"
-          >
-            {isLoadingStream ? (
-              <Loader2 className="w-4 h-4 animate-spin text-black" />
-            ) : isPlaying ? (
-              <Pause className="w-4 h-4 fill-black" />
-            ) : (
-              <Play className="w-4 h-4 fill-black ml-0.5" />
-            )}
-          </button>
-
-          {/* Next */}
-          <button
-            onClick={nextSong}
-            title="Bài tiếp theo"
-            disabled={!currentSong}
-            className="p-1.5 rounded-md text-[#8492a6] hover:text-white transition-all disabled:opacity-30 border border-transparent hover:border-[#1e293b] hover:bg-[#16202e]"
-          >
-            <SkipForward className="w-4 h-4" />
-          </button>
-
-          {/* Repeat */}
-          <button
+            type="button"
             onClick={toggleRepeat}
             title={
               repeatMode === "one"
@@ -270,10 +295,11 @@ export const PlayerBar: React.FC = () => {
                 ? "Lặp lại danh sách"
                 : "Không lặp lại"
             }
-            className={`p-1.5 rounded-md transition-all border ${
+            aria-label="Lặp lại"
+            className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors cursor-pointer ${
               repeatMode !== "off"
-                ? "bg-[#16202e] text-[#2589f5] border-[#2589f5] shadow-[0_0_8px_rgba(37,137,245,0.25)]"
-                : "text-[#8492a6] hover:text-white border-transparent hover:border-[#1e293b] hover:bg-[#16202e]"
+                ? "bg-white/[0.16] text-white"
+                : "text-white/55 hover:text-white hover:bg-white/[0.08]"
             }`}
           >
             {repeatMode === "one" ? (
@@ -282,103 +308,78 @@ export const PlayerBar: React.FC = () => {
               <Repeat className="w-3.5 h-3.5" />
             )}
           </button>
+
+          <button
+            type="button"
+            onClick={() => toggleRightDrawer("queue")}
+            title="Danh sách chờ (Up Next)"
+            aria-label="Danh sách chờ"
+            className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors cursor-pointer ${
+              rightDrawerTab === "queue"
+                ? "bg-white/[0.18] text-white"
+                : "text-white/55 hover:text-white hover:bg-white/[0.08]"
+            }`}
+          >
+            <ListMusic className="w-3.5 h-3.5" />
+          </button>
+
+          <button
+            type="button"
+            onClick={() => toggleRightDrawer("lyrics")}
+            title="Lời bài hát (Lyrics)"
+            aria-label="Lời bài hát"
+            className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors cursor-pointer ${
+              rightDrawerTab === "lyrics"
+                ? "bg-white/[0.18] text-white"
+                : "text-white/55 hover:text-white hover:bg-white/[0.08]"
+            }`}
+          >
+            <MessageSquareQuote className="w-3.5 h-3.5" />
+          </button>
+
+          {currentSong && (
+            <button
+              type="button"
+              onClick={() => setIsFullscreenPlayerOpen(true)}
+              title="Mở toàn màn hình Now Playing"
+              aria-label="Mở toàn màn hình"
+              className="w-8 h-8 rounded-full flex items-center justify-center text-white/55 hover:text-white hover:bg-white/[0.08] transition-colors cursor-pointer"
+            >
+              <Maximize2 className="w-3.5 h-3.5" />
+            </button>
+          )}
         </div>
 
-        {/* Sharp Electric Blue Seek Bar (#2589f5) */}
-        <div className="w-full flex items-center gap-2.5 text-xs">
-          <span
-            ref={timeTextRef}
-            className="w-10 text-right font-mono text-[10px] text-[#8492a6] font-semibold"
-          >
-            00:00
-          </span>
-
-          <div className="relative flex-1 flex items-center group py-1">
-            {/* Background seek track */}
-            <div className="absolute inset-x-0 h-1.5 bg-[#090d14] border border-[#1e293b] rounded-xs overflow-hidden pointer-events-none">
-              <div
-                ref={progressFillRef}
-                className="h-full w-full origin-left bg-[#2589f5] transition-transform duration-100 shadow-[0_0_8px_rgba(37,137,245,0.5)]"
-                style={{ transform: "scaleX(0)", willChange: "transform" }}
-              />
-            </div>
-
-            <input
-              ref={rangeInputRef}
-              type="range"
-              min={0}
-              max={duration || 100}
-              step={0.5}
-              defaultValue={0}
-              onPointerDown={() => {
-                isDraggingRef.current = true;
-              }}
-              onChange={handleSeekChange}
-              disabled={!currentSong}
-              className="w-full h-2 opacity-0 cursor-pointer z-10"
+        {/* Integrated Thin Seek Bar along bottom edge of Pill */}
+        <div
+          className="group/seek absolute bottom-0 left-5 right-5 h-[3px] hover:h-[5px] transition-all flex items-center"
+          title="Kéo hoặc nhấp để tua bài"
+        >
+          <div className="w-full h-full bg-white/[0.10] rounded-full overflow-hidden pointer-events-none">
+            <div
+              ref={progressFillRef}
+              className="h-full w-full origin-left bg-white/85 rounded-full"
+              style={{ transform: "scaleX(0)", willChange: "transform" }}
             />
           </div>
-
-          <span className="w-10 text-left font-mono text-[10px] text-[#475569] font-semibold">
-            {formatSeconds(duration)}
-          </span>
-        </div>
-      </div>
-
-      {/* 3. Right Section: Technical Quality Badge & Volume */}
-      <div className="flex items-center justify-end gap-2.5 w-1/4 min-w-[210px]">
-        {/* Quality Badge: [OPUS 164KBPS] - 03:45 */}
-        <div
-          className="px-2 py-0.5 rounded-md bg-[#090d14] border border-[#1e293b] text-[#38bdf8] text-[10px] font-mono font-semibold tracking-wider flex items-center gap-1.5 shadow-xs"
-          title="Thông số kỹ thuật luồng phát"
-        >
-          <span className="w-1.5 h-1.5 rounded-full bg-[#2ecc71] animate-pulse" />
-          <span>
-            [{streamInfo?.badgeText || "OPUS 164KBPS"}] - {formatSeconds(duration)}
-          </span>
-        </div>
-
-        {/* Lyrics Button [LRC] */}
-        <button
-          onClick={() => setIsLyricsOpen((prev) => !prev)}
-          title="Lời bài hát Karaoke"
-          className={`px-2 py-1 rounded-md text-xs font-mono transition-all border flex items-center gap-1 ${
-            isLyricsOpen
-              ? "bg-[#16202e] text-[#2589f5] border-[#2589f5] shadow-[0_0_8px_rgba(37,137,245,0.25)]"
-              : "text-[#8492a6] hover:text-white border-[#1e293b] hover:border-[#2589f5] bg-[#090d14]"
-          }`}
-        >
-          <Mic2 className="w-3.5 h-3.5" />
-          <span className="text-[10px] font-bold">LRC</span>
-        </button>
-
-        {/* Volume controls */}
-        <div className="flex items-center gap-1.5 pl-1.5 border-l border-[#1e293b]">
-          <button
-            onClick={toggleMute}
-            title={isMuted ? "Bật âm thanh" : "Tắt tiếng"}
-            className="p-1 rounded-xs text-[#8492a6] hover:text-white transition-colors cursor-pointer"
-          >
-            {isMuted || volume === 0 ? (
-              <VolumeX className="w-3.5 h-3.5 text-[#e74c3c]" />
-            ) : (
-              <Volume2 className="w-3.5 h-3.5" />
-            )}
-          </button>
           <input
+            ref={rangeInputRef}
             type="range"
+            aria-label="Thanh tiến trình bài hát"
             min={0}
-            max={1}
-            step={0.01}
-            value={isMuted ? 0 : volume}
-            onChange={handleVolumeChange}
-            className="w-16 h-1 bg-[#1e293b] rounded-xs appearance-none cursor-pointer accent-[#2589f5]"
+            max={duration || 100}
+            step={0.5}
+            defaultValue={0}
+            onPointerDown={() => {
+              isDraggingRef.current = true;
+            }}
+            onChange={handleSeekChange}
+            disabled={!currentSong}
+            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
           />
-          <span className="text-[9px] font-mono text-[#475569] w-6 text-right">
-            {isMuted ? "0%" : `${Math.round(volume * 100)}%`}
-          </span>
         </div>
       </div>
-    </footer>
+      </header>
+    </div>
   );
 };

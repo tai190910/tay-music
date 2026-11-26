@@ -51,6 +51,7 @@ function formatOffsetLabel(offsetSec: number): string {
 }
 
 interface LyricsViewProps {
+  variant?: "drawer" | "fullscreen";
   isMainStageView?: boolean;
   onClose?: () => void;
 }
@@ -112,51 +113,69 @@ function computeTypedCharCount(
 interface LyricLineRowProps {
   line: LyricsLine;
   status: "past" | "active" | "future";
-  activeLineRef?: React.RefObject<HTMLDivElement | null>;
+  variant: "drawer" | "fullscreen";
+  showCaret: boolean;
+  activeLineRef?: React.RefObject<HTMLButtonElement | null>;
   activeTextRef?: React.RefObject<HTMLSpanElement | null>;
   onLineClick: (timeMs: number) => void;
 }
 
 const LyricLineRow = React.memo<LyricLineRowProps>(
-  ({ line, status, activeLineRef, activeTextRef, onLineClick }) => {
+  ({ line, status, variant, showCaret, activeLineRef, activeTextRef, onLineClick }) => {
+    const activeTextSize =
+      variant === "fullscreen"
+        ? "text-2xl lg:text-3xl xl:text-[34px] font-bold leading-[1.32]"
+        : "text-[18px] sm:text-[20px] font-bold leading-[1.4]";
+
+    const inactiveTextSize =
+      variant === "fullscreen"
+        ? "text-xl lg:text-2xl xl:text-[28px] font-bold leading-[1.35]"
+        : "text-[16px] sm:text-[17px] font-semibold leading-[1.45]";
+
     if (status === "active") {
       return (
-        <div
+        <button
+          type="button"
           ref={activeLineRef}
           onClick={() => onLineClick(line.time)}
           style={{ transform: "translate3d(0, 0, 0)", willChange: "transform, opacity" }}
-          className="py-3 px-4 rounded-md bg-[#0f151f] border border-[#2589f5] shadow-[0_0_15px_rgba(37,137,245,0.2)] my-3 transition-[opacity,transform] duration-200 cursor-pointer group"
+          className={`w-full text-left block rounded-2xl bg-white/[0.07] border border-white/[0.08] shadow-[0_8px_24px_rgba(0,0,0,0.28)] transition-[opacity,transform] duration-200 cursor-pointer group ${
+            variant === "fullscreen" ? "py-3.5 px-5 my-4" : "py-2.5 px-3.5 my-2.5"
+          }`}
           title="Nhấp để phát lại câu này"
         >
-          <div className="relative text-white font-mono text-base sm:text-lg font-medium leading-relaxed tracking-wide">
+          <div className={`relative text-white tracking-tight ${activeTextSize}`}>
             {/* Invisible spacer reserves exact final wrapped height so zero layout reflow occurs while typing */}
             <p className="invisible pointer-events-none select-none" aria-hidden="true">
               <span>{line.text || "\u00A0"}</span>
-              <span className="blinking-block-cursor" />
+              {showCaret && <span className="blinking-block-cursor" />}
             </p>
             {/* GPU/DOM-direct typewriter layer updated via ref inside rAF */}
             <p className="absolute inset-0">
               <span ref={activeTextRef} />
-              <span className="blinking-block-cursor" />
+              {showCaret && <span className="blinking-block-cursor" />}
             </p>
           </div>
-        </div>
+        </button>
       );
     }
 
     return (
-      <div
+      <button
+        type="button"
         onClick={() => onLineClick(line.time)}
         style={{ transform: "translate3d(0, 0, 0)" }}
-        className={`py-1 px-3 rounded-md transition-opacity duration-150 cursor-pointer font-mono text-sm sm:text-base leading-relaxed ${
+        className={`w-full text-left block rounded-xl transition-all duration-150 cursor-pointer tracking-tight ${
+          variant === "fullscreen" ? "py-1.5 px-3" : "py-1 px-2"
+        } ${inactiveTextSize} ${
           status === "past"
-            ? "text-[#8492a6] opacity-40 hover:opacity-80 hover:text-white"
-            : "text-[#475569] opacity-30 hover:opacity-60 hover:text-white"
+            ? "text-white/30 hover:text-white/75"
+            : "text-white/35 hover:text-white/80"
         }`}
         title="Nhấp để tua đến câu hát này"
       >
         <span>{line.text}</span>
-      </div>
+      </button>
     );
   }
 );
@@ -164,20 +183,28 @@ const LyricLineRow = React.memo<LyricLineRowProps>(
 LyricLineRow.displayName = "LyricLineRow";
 
 export const LyricsView: React.FC<LyricsViewProps> = ({
+  variant = "drawer",
   isMainStageView = false,
   onClose,
 }) => {
   const {
     audioRef,
+    activeDeck,
     currentSong,
     lyricsData,
     seek,
-    isLyricsOpen,
     setIsLyricsOpen,
     isPlaying,
+    settings,
   } = usePlayer();
 
-  const isLyricFrameOpen = isMainStageView || isLyricsOpen;
+  const isLyricFrameOpen = true;
+  const typewriterEnabledRef = useRef<boolean>(settings.typewriterLyrics);
+  useEffect(() => {
+    typewriterEnabledRef.current = settings.typewriterLyrics;
+    lastCharCountRef.current = -1;
+    syncNowRef.current?.();
+  }, [settings.typewriterLyrics]);
 
   const lines = useMemo(
     () => lyricsData?.parsed?.lines ?? [],
@@ -201,7 +228,7 @@ export const LyricsView: React.FC<LyricsViewProps> = ({
   // DOM Refs for direct zero-re-render mutations
   const viewportRef = useRef<HTMLDivElement | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
-  const activeLineRef = useRef<HTMLDivElement | null>(null);
+  const activeLineRef = useRef<HTMLButtonElement | null>(null);
   const activeTextRef = useRef<HTMLSpanElement | null>(null);
   const staticTextRef = useRef<HTMLSpanElement | null>(null);
   const headerTimeRef = useRef<HTMLSpanElement | null>(null);
@@ -352,7 +379,9 @@ export const LyricsView: React.FC<LyricsViewProps> = ({
       snapNextScrollRef.current = true;
       staticFloatIdxRef.current =
         !isSynced && lyricsData?.lyrics
-          ? Math.min(lyricsData.lyrics.length, Math.floor(curSec * 25))
+          ? typewriterEnabledRef.current
+            ? Math.min(lyricsData.lyrics.length, Math.floor(curSec * 25))
+            : lyricsData.lyrics.length
           : 0;
 
       if (headerTimeRef.current) {
@@ -394,7 +423,9 @@ export const LyricsView: React.FC<LyricsViewProps> = ({
     ) {
       const curSec = songChanged ? 0 : (audioRef.current?.currentTime ?? 0);
       const effectiveMs = (curSec + DEFAULT_LYRIC_LOOKAHEAD_SEC + userOffsetRef.current) * 1000;
-      const charsToShow = computeTypedCharCount(lines, activeLyricsIndex, effectiveMs);
+      const charsToShow = typewriterEnabledRef.current
+        ? computeTypedCharCount(lines, activeLyricsIndex, effectiveMs)
+        : lines[activeLyricsIndex].text.length;
       lastCharCountRef.current = charsToShow;
       activeTextRef.current.textContent = lines[activeLyricsIndex].text.slice(0, charsToShow);
     }
@@ -426,7 +457,7 @@ export const LyricsView: React.FC<LyricsViewProps> = ({
     const audio = audioRef.current;
 
     const syncFrame = (nowMs: number, dtSec: number) => {
-      const curSec = audio?.currentTime ?? 0;
+      const curSec = audioRef.current?.currentTime ?? 0;
 
       // Update header clock once per second via direct DOM ref
       const wholeSec = Math.floor(curSec);
@@ -449,7 +480,9 @@ export const LyricsView: React.FC<LyricsViewProps> = ({
           nextIdx < lines.length &&
           activeTextRef.current
         ) {
-          const charsToShow = computeTypedCharCount(lines, nextIdx, effectiveMs);
+          const charsToShow = typewriterEnabledRef.current
+            ? computeTypedCharCount(lines, nextIdx, effectiveMs)
+            : lines[nextIdx].text.length;
           if (charsToShow !== lastCharCountRef.current) {
             lastCharCountRef.current = charsToShow;
             activeTextRef.current.textContent = lines[nextIdx].text.slice(0, charsToShow);
@@ -460,9 +493,15 @@ export const LyricsView: React.FC<LyricsViewProps> = ({
         if (nowMs >= manualScrollUntilRef.current) {
           targetYRef.current = activeTargetYRef.current;
         }
-      } else if (!isSynced && lyricsData?.lyrics && staticTextRef.current && dtSec > 0) {
+      } else if (!isSynced && lyricsData?.lyrics && staticTextRef.current) {
         const fullLen = lyricsData.lyrics.length;
-        if (staticFloatIdxRef.current < fullLen) {
+        if (!typewriterEnabledRef.current) {
+          if (lastCharCountRef.current !== fullLen) {
+            staticFloatIdxRef.current = fullLen;
+            lastCharCountRef.current = fullLen;
+            staticTextRef.current.textContent = lyricsData.lyrics;
+          }
+        } else if (dtSec > 0 && staticFloatIdxRef.current < fullLen) {
           staticFloatIdxRef.current = Math.min(fullLen, staticFloatIdxRef.current + (dtSec * 1000) / 40);
           const chars = Math.floor(staticFloatIdxRef.current);
           if (chars !== lastCharCountRef.current) {
@@ -556,6 +595,7 @@ export const LyricsView: React.FC<LyricsViewProps> = ({
     lines,
     lyricsData?.lyrics,
     audioRef,
+    activeDeck,
     applyScrollTransform,
   ]);
 
@@ -653,10 +693,10 @@ export const LyricsView: React.FC<LyricsViewProps> = ({
 
   if (!currentSong) {
     return (
-      <div className="flex-1 flex flex-col items-center justify-center p-8 bg-[#090d14] text-[#475569] font-mono select-none">
-        <Disc className="w-12 h-12 mb-3 opacity-30 animate-spin" />
-        <p className="text-sm text-white font-bold">// CHƯA PHÁT BÀI HÁT NÀO</p>
-        <p className="text-xs text-[#8492a6] mt-1">Chọn một bài hát trong danh sách để xem lời bài hát chạy chữ</p>
+      <div className="flex-1 flex flex-col items-center justify-center p-8 text-white/50 font-sans select-none">
+        <Disc className="w-10 h-10 mb-3 opacity-30 animate-spin" />
+        <p className="text-sm font-semibold text-white">Chưa phát bài hát nào</p>
+        <p className="text-xs text-white/50 mt-1">Chọn một bài hát để xem lời bài hát đồng bộ</p>
       </div>
     );
   }
@@ -668,82 +708,94 @@ export const LyricsView: React.FC<LyricsViewProps> = ({
 
   return (
     <div
-      className={`flex flex-col select-none overflow-hidden font-mono bg-[#090d14] ${
-        isMainStageView
-          ? "w-full h-full"
-          : "absolute inset-0 z-40 backdrop-blur-md bg-[#090d14]/95 animate-fadeIn"
+      className={`flex flex-col select-none overflow-hidden font-sans bg-transparent flex-1 min-h-0 ${
+        isMainStageView ? "w-full h-full" : ""
       }`}
     >
-      {/* Terminal Titlebar (Styled exactly after Reference Image 1) */}
-      <div className="px-6 pt-5 pb-3 bg-[#090d14] flex-shrink-0 z-20">
-        <div className="flex items-center justify-between gap-3">
-          {/* Header Line in Terminal Green (#2ecc71) font monospace */}
-          <div className="flex items-center gap-2 min-w-0 flex-1 text-xs sm:text-sm font-mono font-semibold text-[#2ecc71]">
-            <span className="flex-shrink-0">📍</span>
-            <span className="truncate">
-              Đang phát: {currentSong.title}
-              {currentSong.artists.length > 0 && ` - ${currentSong.artists.map((a) => a.name).join(", ")}`}
-              {" - "}
-              <span ref={headerTimeRef}>00:00</span>
-            </span>
-          </div>
-
-          <div className="flex items-center gap-2 flex-shrink-0">
-            {isSynced && (
-              <div
-                className={`flex items-center rounded-xs bg-[#0f151f] border transition-colors ${
-                  userOffset !== 0
-                    ? "border-[#2589f5]/70 shadow-[0_0_8px_rgba(37,137,245,0.2)]"
-                    : "border-[#1e293b]"
-                }`}
-                title="Chỉnh độ lệch thời gian lời bài hát (Mặc định +1.0s)"
-              >
-                <button
-                  onClick={() => updateUserOffset(userOffset - LYRIC_OFFSET_STEP_SEC)}
-                  title="Lùi lời -0.5s (chữ chạy trễ hơn)"
-                  className="px-1.5 py-0.5 text-[10px] font-mono font-bold text-[#8492a6] hover:text-white hover:bg-[#16202e] border-r border-[#1e293b] transition-colors cursor-pointer"
-                >
-                  -0.5s
-                </button>
-                <button
-                  onClick={() => updateUserOffset(0)}
-                  title={userOffset !== 0 ? "Nhấn để đặt lại độ trễ về 0s" : "Độ trễ người dùng đang ở 0.0s (Bù mặc định +1.0s)"}
-                  className={`px-1.5 py-0.5 text-[10px] font-mono font-bold tabular-nums transition-colors cursor-pointer ${
-                    userOffset === 0
-                      ? "text-[#475569] opacity-60 hover:opacity-100 hover:text-[#8492a6]"
-                      : userOffset > 0
-                      ? "text-[#2ecc71] hover:text-white"
-                      : "text-[#e67e22] hover:text-white"
-                  }`}
-                >
-                  {formatOffsetLabel(userOffset)}
-                </button>
-                <button
-                  onClick={() => updateUserOffset(userOffset + LYRIC_OFFSET_STEP_SEC)}
-                  title="Đẩy lời +0.5s (chữ chạy sớm hơn)"
-                  className="px-1.5 py-0.5 text-[10px] font-mono font-bold text-[#8492a6] hover:text-white hover:bg-[#16202e] border-l border-[#1e293b] transition-colors cursor-pointer"
-                >
-                  +0.5s
-                </button>
-              </div>
-            )}
-            {lyricsData?.provider && (
-              <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-xs bg-[#0f151f] text-[#38bdf8] border border-[#1e293b] whitespace-nowrap">
-                NGUỒN: {lyricsData.provider.toUpperCase()}
-              </span>
-            )}
-            <button
-              onClick={handleClose}
-              title="Đóng lời bài hát (Esc)"
-              className="p-1 rounded-xs bg-[#0f151f] border border-[#1e293b] hover:border-[#2589f5] text-[#8492a6] hover:text-white transition-all cursor-pointer"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          </div>
+      {/* Glass Header with Sync Offset Pill */}
+      <div
+        className={`flex items-center justify-between gap-2 flex-shrink-0 z-20 ${
+          variant === "fullscreen" ? "px-6 pt-2 pb-3" : "px-5 pt-2 pb-2.5"
+        }`}
+      >
+        <div className="flex items-center gap-2 min-w-0">
+          <h3
+            className={`font-semibold text-white tracking-tight ${
+              variant === "fullscreen" ? "text-base" : "text-[15px]"
+            }`}
+          >
+            Lyrics
+          </h3>
+          <span
+            ref={headerTimeRef}
+            className="text-[11px] font-mono text-white/40 tabular-nums"
+          >
+            00:00
+          </span>
         </div>
 
-        {/* Thin Divider Line (1px #1e293b) as seen in Reference Image 1 */}
-        <div className="border-b border-[#1e293b] mt-3" />
+        <div className="flex items-center gap-1.5 flex-shrink-0">
+          {isSynced && (
+            <div
+              className={`flex items-center rounded-full bg-white/[0.08] border transition-colors ${
+                userOffset !== 0 ? "border-white/25" : "border-white/[0.10]"
+              }`}
+              title="Chỉnh độ lệch thời gian lời bài hát (Mặc định +1.0s)"
+            >
+              <button
+                type="button"
+                onClick={() => updateUserOffset(userOffset - LYRIC_OFFSET_STEP_SEC)}
+                title="Lùi lời -0.5s"
+                className="px-2 py-0.5 text-[11px] font-mono font-medium text-white/65 hover:text-white hover:bg-white/[0.08] rounded-l-full transition-colors cursor-pointer"
+              >
+                -0.5s
+              </button>
+              <button
+                type="button"
+                onClick={() => updateUserOffset(0)}
+                title={
+                  userOffset !== 0
+                    ? "Nhấn để đặt lại độ trễ về 0s"
+                    : "Độ trễ người dùng đang ở 0.0s (Bù mặc định +1.0s)"
+                }
+                className={`px-1.5 py-0.5 text-[11px] font-mono font-semibold tabular-nums transition-colors cursor-pointer ${
+                  userOffset === 0
+                    ? "text-white/45 hover:text-white/80"
+                    : userOffset > 0
+                    ? "text-emerald-400 hover:text-white"
+                    : "text-amber-400 hover:text-white"
+                }`}
+              >
+                {formatOffsetLabel(userOffset)}
+              </button>
+              <button
+                type="button"
+                onClick={() => updateUserOffset(userOffset + LYRIC_OFFSET_STEP_SEC)}
+                title="Đẩy lời +0.5s"
+                className="px-2 py-0.5 text-[11px] font-mono font-medium text-white/65 hover:text-white hover:bg-white/[0.08] rounded-r-full transition-colors cursor-pointer"
+              >
+                +0.5s
+              </button>
+            </div>
+          )}
+
+          {lyricsData?.provider && (
+            <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-white/[0.07] text-white/60 border border-white/[0.08] whitespace-nowrap">
+              {lyricsData.provider}
+            </span>
+          )}
+
+          {onClose && (
+            <button
+              type="button"
+              onClick={handleClose}
+              title="Đóng lời bài hát (Esc)"
+              className="p-1.5 rounded-full bg-white/[0.08] hover:bg-white/[0.16] text-white/70 hover:text-white transition-all cursor-pointer"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </div>
       </div>
 
       {/* GPU-Accelerated Clipped Viewport */}
@@ -759,7 +811,11 @@ export const LyricsView: React.FC<LyricsViewProps> = ({
             transform: "translate3d(0px, 0px, 0px)",
             willChange: "transform",
           }}
-          className="px-6 md:px-12 py-10 space-y-5 relative"
+          className={
+            variant === "fullscreen"
+              ? "px-6 md:px-10 py-14 space-y-4 relative"
+              : "px-5 py-10 space-y-2.5 relative"
+          }
         >
           {isSynced ? (
             /* SYNCED LRC TYPEWRITER VIEW */
@@ -776,6 +832,8 @@ export const LyricsView: React.FC<LyricsViewProps> = ({
                   key={`${line.time}-${idx}`}
                   line={line}
                   status={status}
+                  variant={variant}
+                  showCaret={settings.typewriterLyrics}
                   activeLineRef={status === "active" ? activeLineRef : undefined}
                   activeTextRef={status === "active" ? activeTextRef : undefined}
                   onLineClick={handleLineClick}
@@ -784,41 +842,38 @@ export const LyricsView: React.FC<LyricsViewProps> = ({
             })
           ) : lyricsData?.lyrics ? (
             /* STATIC LYRICS TYPEWRITER FALLBACK (Zero setState per char) */
-            <div className="py-4 px-4 rounded-md bg-[#0f151f] border border-[#1e293b] space-y-2">
-              <div className="text-[10px] font-mono text-[#38bdf8] mb-2 uppercase">
-                // CHẾ ĐỘ TYPEWRITER LỜI BÀI HÁT TĨNH:
-              </div>
-              <div className="relative text-white font-mono text-base leading-relaxed whitespace-pre-wrap">
+            <div className="py-4 px-4 rounded-2xl bg-white/[0.05] border border-white/[0.08] space-y-2">
+              <div className="relative text-white/90 text-sm sm:text-base leading-relaxed whitespace-pre-wrap">
                 <p className="invisible pointer-events-none select-none" aria-hidden="true">
                   <span>{lyricsData.lyrics}</span>
-                  <span className="blinking-block-cursor" />
+                  {settings.typewriterLyrics && <span className="blinking-block-cursor" />}
                 </p>
                 <p className="absolute inset-0">
                   <span ref={staticTextRef} />
-                  <span className="blinking-block-cursor" />
+                  {settings.typewriterLyrics && <span className="blinking-block-cursor" />}
                 </p>
               </div>
             </div>
           ) : (
             /* NO LYRICS FOUND OR LOADING */
-            <div className="h-full flex flex-col items-center justify-center text-center py-20 text-[#475569]">
-              <Mic2 className="w-10 h-10 mb-3 opacity-30 text-[#2ecc71] animate-pulse" />
-              <p className="text-sm font-bold text-white font-mono">
-                {lyricsData ? "// 404_KHÔNG_TÌM_THẤY_LỜI_BÀI_HÁT" : "// ĐANG_TRUY_VẤN_LỜI_BÀI_HÁT..."}
+            <div className="h-full flex flex-col items-center justify-center text-center py-20 text-white/45">
+              <Mic2 className="w-9 h-9 mb-3 opacity-40" />
+              <p className="text-sm font-semibold text-white/80">
+                {lyricsData ? "Chưa tìm thấy lời bài hát" : "Đang tìm lời bài hát..."}
               </p>
-              <p className="text-xs text-[#8492a6] mt-1 font-mono">
-                Tự động đối soát từ LrcLib, KuGou và NetEase
+              <p className="text-xs text-white/45 mt-1">
+                Tự động đồng bộ từ LrcLib, KuGou và NetEase
               </p>
             </div>
           )}
         </div>
 
-        {/* Custom GPU-Composited 5px HUD Scrollbar */}
+        {/* Custom GPU-Composited Thin macOS Scrollbar */}
         <div
           ref={scrollbarTrackRef}
           onPointerDown={handleScrollbarPointerDown}
           style={{ opacity: 0, pointerEvents: "none" }}
-          className="absolute top-0 right-0 bottom-0 w-[5px] bg-[#090d14] z-30 transition-opacity duration-150 cursor-pointer group/sb"
+          className="absolute top-1 right-1 bottom-1 w-[5px] bg-transparent z-30 transition-opacity duration-150 cursor-pointer group/sb"
         >
           <div
             ref={scrollbarThumbRef}
@@ -827,7 +882,7 @@ export const LyricsView: React.FC<LyricsViewProps> = ({
               transform: "translate3d(0px, 0px, 0px)",
               willChange: "transform",
             }}
-            className="w-full rounded-[4px] bg-[#1e293b] group-hover/sb:bg-[#2589f5] group-hover/sb:shadow-[0_0_8px_rgba(37,137,245,0.4)] transition-colors duration-150"
+            className="w-full rounded-full bg-white/25 group-hover/sb:bg-white/45 transition-colors duration-150"
           />
         </div>
       </div>

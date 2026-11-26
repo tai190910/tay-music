@@ -2,7 +2,8 @@
 
 import React, { useEffect, useState } from "react";
 import { X, Search, RefreshCw, Disc } from "lucide-react";
-import type { Song } from "../types.ts";
+import { getSourceBadge, type Song } from "../types.ts";
+import { TrackThumbnail } from "./TrackThumbnail.tsx";
 
 interface FixMatchModalProps {
   song: Song;
@@ -59,12 +60,16 @@ export const FixMatchModal: React.FC<FixMatchModalProps> = ({
     try {
       const newSongData: Song = {
         id: candidateSong.id,
-        title: candidateSong.title,
-        artists: candidateSong.artists || [{ name: primaryArtist, id: null }],
+        videoId: candidateSong.id,
+        title: song.title || candidateSong.title,
+        artists: song.artists?.length
+          ? song.artists
+          : candidateSong.artists || [{ name: primaryArtist, id: null }],
         duration: candidateSong.duration || song.duration || 0,
-        thumbnail: candidateSong.thumbnail || song.thumbnail,
-        album: candidateSong.album?.name || song.album,
+        thumbnail: song.thumbnail || candidateSong.thumbnail,
+        album: song.album || candidateSong.album?.name,
         explicit: candidateSong.explicit,
+        source: candidateSong.source || null,
       };
 
       await window.mochyApi.replacePlaylistSong(playlistId, song.id, newSongData);
@@ -86,79 +91,92 @@ export const FixMatchModal: React.FC<FixMatchModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-md bg-[#090d14]/80 animate-fadeIn select-none font-sans">
-      <div className="relative bg-[#0f151f] border border-[#1e293b] rounded-md w-full max-w-2xl overflow-hidden shadow-[0_0_35px_rgba(0,0,0,0.85)] flex flex-col max-h-[85vh]">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-md bg-black/70 animate-fadeIn select-none font-sans"
+      onClick={onClose}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Đổi phiên bản bài hát"
+        onClick={(e) => e.stopPropagation()}
+        className="relative bg-[#16161a]/95 backdrop-blur-2xl border border-white/[0.12] rounded-[24px] w-full max-w-2xl overflow-hidden shadow-[0_28px_80px_rgba(0,0,0,0.9)] flex flex-col max-h-[85vh] text-[#f5f5f7]"
+      >
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-3.5 border-b border-[#1e293b] bg-[#090d14]">
-          <div className="flex items-center gap-2.5">
-            <RefreshCw className="w-4 h-4 text-[#2589f5]" />
+        <div className="flex items-center justify-between px-6 py-4 border-b border-white/[0.08] bg-[#121216]/70">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-full bg-white/[0.08] flex items-center justify-center">
+              <RefreshCw className="w-4 h-4 text-[#f5f5f7]" />
+            </div>
             <div>
-              <h3 className="text-xs font-mono font-bold text-white uppercase tracking-wider">
-                // ĐỔI PHIÊN BẢN BÀI HÁT (FIX MATCH)
+              <h3 className="text-[15px] font-bold text-[#f5f5f7] tracking-tight">
+                Đổi phiên bản bài hát (Fix Match)
               </h3>
-              <p className="text-[10px] font-mono text-[#8492a6]">
-                Chọn bản thu khớp chuẩn nhất trên YouTube Music để ghi đè vào SQLite
+              <p className="text-[12px] text-[#8e8e93]">
+                Chọn bản thu khớp chuẩn nhất trên YouTube / SoundCloud để ghi đè vào thư viện
               </p>
             </div>
           </div>
           <button
+            type="button"
             onClick={onClose}
-            className="p-1 rounded-xs text-[#8492a6] hover:text-white hover:bg-[#16202e] border border-transparent hover:border-[#1e293b] transition-colors cursor-pointer"
+            aria-label="Đóng"
+            className="w-8 h-8 rounded-full text-[#8e8e93] hover:text-white bg-white/[0.06] hover:bg-white/[0.14] flex items-center justify-center transition-colors cursor-pointer"
           >
             <X className="w-4 h-4" />
           </button>
         </div>
 
         {/* Current Song Reference */}
-        <div className="px-5 py-2.5 bg-[#090d14] border-b border-[#1e293b] flex items-center justify-between text-xs font-mono">
+        <div className="px-6 py-3 bg-white/[0.03] border-b border-white/[0.07] flex items-center justify-between text-[12.5px]">
           <div className="flex items-center gap-2 truncate pr-4">
-            <span className="text-[#475569]">// MỤC TIÊU:</span>
-            <span className="font-bold text-white truncate font-sans">{song.title}</span>
-            <span className="text-[#38bdf8] truncate">— {song.artists.map((a) => a.name).join(", ")}</span>
+            <span className="text-[#8e8e93]">Mục tiêu:</span>
+            <span className="font-semibold text-white truncate">{song.title}</span>
+            <span className="text-[#9a9aa0] truncate">— {song.artists.map((a) => a.name).join(", ")}</span>
           </div>
-          <span className="text-[#2589f5] font-bold flex-shrink-0">
-            [{formatSec(song.duration)}]
+          <span className="text-[#8e8e93] font-medium flex-shrink-0 tabular-nums">
+            {formatSec(song.duration)}
           </span>
         </div>
 
         {/* Search Bar */}
-        <div className="p-3.5 border-b border-[#1e293b] bg-[#0f151f]">
+        <div className="px-6 py-3.5 border-b border-white/[0.08]">
           <form onSubmit={handleSearchSubmit} className="flex gap-2">
-            <div className="relative flex-1 bg-[#090d14] border border-[#1e293b] rounded-xs flex items-center px-2.5">
-              <Search className="w-3.5 h-3.5 text-[#475569] mr-2" />
+            <div className="relative flex-1 bg-white/[0.06] border border-white/[0.1] focus-within:border-white/[0.28] rounded-xl flex items-center px-3">
+              <Search className="w-4 h-4 text-[#8e8e93] mr-2" />
               <input
                 type="text"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder="Nhập tên bài hát hoặc ca sĩ để tìm kiếm ứng cử viên khác..."
-                className="w-full py-1.5 bg-transparent text-xs text-white placeholder-[#475569] font-mono focus:outline-none"
+                className="w-full h-9 bg-transparent text-[13px] text-white placeholder-[#6e6e73] focus:outline-none"
               />
             </div>
             <button
               type="submit"
               disabled={loading}
-              className="px-3.5 py-1.5 bg-[#2589f5] hover:bg-[#1d70cb] text-white rounded-xs text-xs font-mono font-bold transition-all disabled:opacity-40 flex items-center gap-1.5 shadow-xs cursor-pointer"
+              className="px-4 h-9 bg-white hover:bg-[#e5e5ea] text-[#121216] rounded-xl text-[12.5px] font-semibold transition-all disabled:opacity-40 flex items-center gap-1.5 cursor-pointer"
             >
               <Search className="w-3.5 h-3.5" />
-              <span>[ TÌM ]</span>
+              <span>Tìm</span>
             </button>
           </form>
         </div>
 
         {/* Candidates List */}
-        <div className="flex-1 overflow-y-auto p-3.5 space-y-2">
+        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-2">
           {loading ? (
-            <div className="py-16 text-center text-xs font-mono text-[#2589f5] flex items-center justify-center gap-2">
-              <RefreshCw className="w-4 h-4 animate-spin" />
-              <span>ĐANG_TÌM_ỨNG_CỬ_VIÊN_YOUTUBE...</span>
+            <div className="py-16 text-center text-[13px] text-[#8e8e93] flex items-center justify-center gap-2">
+              <RefreshCw className="w-4 h-4 animate-spin text-white" />
+              <span>Đang tìm ứng cử viên...</span>
             </div>
           ) : error ? (
-            <div className="py-12 text-center text-[#e74c3c] font-mono text-xs">
-              <p>// LỖI: {error}</p>
+            <div className="py-12 text-center text-rose-400 text-[13px]">
+              <p>Lỗi: {error}</p>
             </div>
           ) : candidates.length === 0 ? (
-            <div className="py-12 text-center text-[#475569] font-mono text-xs">
-              <p>// KHÔNG CÓ KẾT QUẢ GỢI Ý NÀO KHẢ THI</p>
+            <div className="py-12 text-center text-[#8e8e93] text-[13px]">
+              <p>Không có kết quả gợi ý nào khả thi</p>
             </div>
           ) : (
             candidates.map(({ song: cand, score }) => {
@@ -166,62 +184,69 @@ export const FixMatchModal: React.FC<FixMatchModalProps> = ({
                 cand.duration && song.duration
                   ? Math.round(cand.duration - song.duration)
                   : null;
-              const isCloseDuration = deltaSec !== null && Math.abs(deltaSec) <= 4;
+              const isCloseDuration = deltaSec !== null && Math.abs(deltaSec) <= 5;
               const isReplacing = replacingId === cand.id;
+              const badge = getSourceBadge(cand);
 
               return (
                 <div
                   key={cand.id}
                   onClick={() => handleSelectCandidate(cand)}
-                  className={`p-2.5 rounded-md border transition-all cursor-pointer flex items-center gap-3 ${
+                  className={`p-3 rounded-2xl border transition-all cursor-pointer flex items-center gap-3 ${
                     isReplacing
-                      ? "bg-[#16202e] border-[#2589f5] text-white"
-                      : "bg-[#090d14] border-[#1e293b] hover:border-[#2589f5] hover:bg-[#16202e] text-[#8492a6] hover:text-white"
+                      ? "bg-white/[0.1] border-white/[0.3] text-white"
+                      : "bg-white/[0.03] border-white/[0.06] hover:border-white/[0.16] hover:bg-white/[0.07] text-[#9a9aa0] hover:text-white"
                   }`}
                 >
-                  <div className="w-10 h-10 rounded-xs overflow-hidden bg-[#090d14] border border-[#1e293b] flex-shrink-0">
-                    {cand.thumbnail ? (
-                      <img src={cand.thumbnail} alt={cand.title} className="w-full h-full object-cover" />
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center">
-                        <Disc className="w-5 h-5 text-[#475569]" />
-                      </div>
-                    )}
-                  </div>
+                  <TrackThumbnail
+                    src={cand.thumbnail}
+                    videoId={cand.videoId || cand.id}
+                    alt={cand.title}
+                    iconSize="sm"
+                    className="w-11 h-11 rounded-xl bg-white/[0.06] border border-white/[0.08] flex-shrink-0"
+                  />
 
                   <div className="flex-1 min-w-0 pr-2">
-                    <p className="text-xs font-bold text-white truncate font-sans">
-                      {cand.title}
-                    </p>
-                    <p className="text-[11px] text-[#38bdf8] truncate font-mono">
-                      {cand.artists?.map((a: any) => a.name).join(", ")}
+                    <div className="flex items-center gap-2">
+                      <span
+                        className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-md border flex-shrink-0 ${badge.cls}`}
+                      >
+                        {badge.label}
+                      </span>
+                      <p className="text-[13px] font-semibold text-white truncate">
+                        {cand.title}
+                      </p>
+                    </div>
+                    <p className="text-[12px] text-[#8e8e93] truncate mt-0.5">
+                      {cand.artists?.map((a: any) => a.name).join(", ") || cand.author || "Unknown"}
                     </p>
                   </div>
 
-                  <div className="flex items-center gap-2 flex-shrink-0 font-mono text-[10px]">
-                    <span className="text-[#8492a6]">{formatSec(cand.duration)}</span>
+                  <div className="flex items-center gap-2 flex-shrink-0 text-[11.5px]">
+                    <span className="text-[#8e8e93] tabular-nums">{formatSec(cand.duration)}</span>
 
                     {deltaSec !== null && (
                       <span
-                        className={`px-1.5 py-0.5 rounded-xs font-bold border ${
+                        className={`px-2 py-0.5 rounded-full font-medium tabular-nums ${
                           isCloseDuration
-                            ? "bg-[#2ecc71]/15 text-[#2ecc71] border-[#2ecc71]/40"
-                            : "bg-[#e67e22]/15 text-[#e67e22] border-[#e67e22]/40"
+                            ? "bg-emerald-500/15 text-emerald-400"
+                            : "bg-amber-500/15 text-amber-400"
                         }`}
                       >
                         {deltaSec >= 0 ? `+${deltaSec}s` : `${deltaSec}s`}
                       </span>
                     )}
 
-                    <span className="text-[#2589f5] font-bold">
-                      [{Math.round(score * 100)}%]
+                    <span className="text-[#8e8e93] font-medium tabular-nums">
+                      {Math.round(score * 100)}%
                     </span>
 
                     <button
+                      type="button"
                       disabled={isReplacing}
-                      className="px-2.5 py-1 rounded-xs bg-[#2ecc71] hover:bg-[#27ae60] text-black font-mono font-bold text-xs transition-all shadow-xs"
+                      className="px-3.5 py-1.5 rounded-full bg-white hover:bg-[#e5e5ea] text-[#121216] font-semibold text-[12px] transition-all cursor-pointer"
                     >
-                      {isReplacing ? "..." : "[ CHỌN ]"}
+                      {isReplacing ? "..." : "Chọn"}
                     </button>
                   </div>
                 </div>

@@ -2,85 +2,91 @@
 
 @theme {
   --font-mono: "Fira Code", "JetBrains Mono", Consolas, Monaco, "Courier New", monospace;
-  --font-sans: "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", Roboto, sans-serif;
 
-  /* Retro-RPG & Dark Cyber-Terminal Palette */
-  --color-rpg-bg: #090d14;
-  --color-rpg-card: #0f151f;
-  --color-rpg-cardHover: #16202e;
-  --color-rpg-border: #1e293b;
-  --color-rpg-blue: #2589f5;
-  --color-rpg-cyan: #38bdf8;
-  --color-rpg-green: #2ecc71;
-  --color-rpg-amber: #e67e22;
-  --color-rpg-red: #e74c3c;
-  --color-rpg-muted: #8492a6;
-  --color-rpg-dim: #475569;
+  /* Modern macOS / Apple Music Dark Glassmorphism Palette */
+  --color-glass-bg: #0a0a0c;
+  --color-glass-surface: #121215;
+  --color-glass-card: #18181d;
+  --color-mochy-sidebar: #1c1c22;
+  --color-mochy-card: #24242b;
+  --color-mochy-border: rgba(255, 255, 255, 0.10);
+  --color-mochy-subtext: #a1a1aa;
+  --color-mochy-muted: #71717a;
 
-  /* Backward compatibility */
-  --color-hud-bg: #090d14;
-  --color-hud-surface: #0f151f;
-  --color-hud-card: #0f151f;
-  --color-hud-cardHover: #16202e;
-  --color-hud-border: #1e293b;
-  --color-cyber-cyan: #2589f5;
-  --color-cyber-green: #2ecc71;
-  --color-cyber-amber: #e67e22;
-  --color-cyber-red: #e74c3c;
-  --color-hud-text: #e2e8f0;
-  --color-hud-muted: #8492a6;
-  --color-hud-dim: #475569;
+  /* Accent helpers */
+  --color-apple-red: #fa233b;
+  --color-apple-pink: #fb5c74;
 }
 
-/* Custom RPG HUD Scrollbar */
+html,
+body,
+#root {
+  background-color: #0a0a0c;
+  color: #f5f5f7;
+  overflow: hidden;
+  height: 100%;
+  width: 100%;
+  color-scheme: dark;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* macOS Subtle Dark Scrollbar */
 ::-webkit-scrollbar {
-  width: 5px;
-  height: 5px;
+  width: 6px;
+  height: 6px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #090d14;
+  background: transparent;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #1e293b;
-  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.16);
+  border-radius: 9999px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #2589f5;
-  box-shadow: 0 0 8px rgba(37, 137, 245, 0.4);
+  background: rgba(255, 255, 255, 0.30);
 }
 
-/* Solid Block Blinking Cursor (Exactly as shown in Image 1) */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Soft Karaoke Caret */
 @keyframes blockCursorBlink {
   0%, 48% {
-    opacity: 1;
+    opacity: 0.9;
   }
   50%, 98% {
     opacity: 0;
   }
   100% {
-    opacity: 1;
+    opacity: 0.9;
   }
 }
 
 .blinking-block-cursor {
   display: inline-block;
-  width: 0.58em;
-  height: 1.15em;
-  background-color: #38bdf8;
-  vertical-align: -0.16em;
-  margin-left: 2px;
-  box-shadow: 0 0 6px rgba(56, 189, 248, 0.6);
+  width: 2px;
+  height: 1.05em;
+  border-radius: 999px;
+  background-color: rgba(255, 255, 255, 0.75);
+  vertical-align: -0.14em;
+  margin-left: 4px;
   will-change: opacity;
-  animation: blockCursorBlink 0.85s infinite;
+  animation: blockCursorBlink 0.95s infinite;
 }
 
 /* Equalizer Bars Animation */
 @keyframes visualizerBounce {
   0% {
-    height: 20%;
+    height: 22%;
   }
   50% {
     height: 100%;
@@ -103,7 +109,7 @@
 @keyframes fadeIn {
   from {
     opacity: 0;
-    transform: scale(0.995);
+    transform: scale(0.992);
   }
   to {
     opacity: 1;
@@ -112,5 +118,66 @@
 }
 
 .animate-fadeIn {
-  animation: fadeIn 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+  animation: fadeIn 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Glassy Sidebar V10 */
+.glass-sidebar-v10 {
+  background: linear-gradient(180deg, rgba(30, 38, 56, 0.78) 0%, rgba(14, 17, 24, 0.88) 100%);
+  backdrop-filter: blur(24px) saturate(140%);
+  -webkit-backdrop-filter: blur(24px) saturate(140%);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.65), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  transition: width 0.35s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* Inverted border-radius active tab seamlessly connected to right white rail */
+.v10-nav-active {
+  position: relative;
+  background-color: #f8fafc;
+  color: #0f172a;
+  border-radius: 16px 0 0 16px;
+  margin-right: -1px;
+  z-index: 2;
+}
+
+.v10-nav-active::before,
+.v10-nav-active::after {
+  content: "";
+  position: absolute;
+  right: 0;
+  width: 16px;
+  height: 16px;
+  pointer-events: none;
+}
+
+.v10-nav-active::before {
+  top: -16px;
+  background: radial-gradient(circle at 0 0, transparent 15.5px, #f8fafc 16px);
+}
+
+.v10-nav-active::after {
+  bottom: -16px;
+  background: radial-gradient(circle at 0 100%, transparent 15.5px, #f8fafc 16px);
+}
+
+/* Subtle mouse spotlight hover for inactive expanded menu pills */
+.v10-spotlight {
+  position: relative;
+  transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease, transform 0.2s ease;
+}
+
+.v10-spotlight:hover {
+  background-image: radial-gradient(
+    120px circle at var(--spot-x, 50%) var(--spot-y, 50%),
+    rgba(255, 255, 255, 0.14),
+    rgba(255, 255, 255, 0.03) 70%
+  );
+  border-color: rgba(255, 255, 255, 0.14);
+}
+
+/* Vertical muted section label at bottom of the white rail */
+.v10-rail-label {
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
 }

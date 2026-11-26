@@ -2,7 +2,7 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import type { MochyApi } from "../types.ts";
+import { isValidTrackId, type MochyApi } from "../types.ts";
 
 export const tauriMochyApi: MochyApi = {
   // YouTube API
@@ -15,9 +15,9 @@ export const tauriMochyApi: MochyApi = {
     } else if (rawVideoId && typeof rawVideoId === "object") {
       videoId = (rawVideoId.videoId || rawVideoId.id || "").trim();
     }
-    if (!videoId || videoId === "undefined" || videoId.length !== 11) {
-      console.warn("[TauriBridge] Blocked getStream with invalid 11-char videoId:", rawVideoId);
-      return Promise.reject(new Error(`Invalid 11-character videoId: "${rawVideoId}"`));
+    if (!isValidTrackId(videoId)) {
+      console.warn("[TauriBridge] Blocked getStream with invalid trackId:", rawVideoId);
+      return Promise.reject(new Error(`Invalid trackId: "${rawVideoId}"`));
     }
     return invoke("youtube_get_stream", { videoId, quality });
   },

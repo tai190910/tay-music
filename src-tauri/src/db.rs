@@ -669,6 +669,12 @@ impl MochyDatabase {
 
         let conn = self.conn.lock().map_err(|e| e.to_string())?;
         let now = now_ms();
+        if !new_id.is_empty() && new_id != old_song_id {
+            let _ = conn.execute(
+                "DELETE FROM playlist_song_map WHERE playlist_id = ?1 AND song_id = ?2",
+                params![playlist_id, new_id],
+            );
+        }
         let changes = conn
             .execute(
                 "UPDATE playlist_song_map SET song_id = ?1 WHERE playlist_id = ?2 AND song_id = ?3",
@@ -684,6 +690,16 @@ impl MochyDatabase {
         } else {
             Ok(false)
         }
+    }
+
+    pub fn clear_playlist_songs(&self, playlist_id: &str) -> Result<(), String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        conn.execute(
+            "DELETE FROM playlist_song_map WHERE playlist_id = ?1",
+            params![playlist_id],
+        )
+        .map_err(|e| e.to_string())?;
+        Ok(())
     }
 
     pub fn get_playlist_songs(&self, playlist_id: &str) -> Result<Vec<DbSong>, String> {

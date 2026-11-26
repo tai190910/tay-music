@@ -37,6 +37,8 @@ pub struct SongItem {
     pub share_link: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub author: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<String>, // "ytm_song" | "yt_video" | "soundcloud"
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -248,6 +250,12 @@ pub struct ImportResult {
     pub total: usize,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub playlist_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub playlist_name: Option<String>,
+    #[serde(default)]
+    pub is_liked: bool,
+    #[serde(default)]
+    pub unmatched_tracks: Vec<ImportedTrack>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

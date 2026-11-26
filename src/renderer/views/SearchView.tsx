@@ -1,26 +1,143 @@
 // src/renderer/views/SearchView.tsx
 
-import React, { useState, useEffect, useRef } from "react";
-import { Search, X, Loader2, Music, Terminal, Sparkles } from "lucide-react";
-import type { Song } from "../types.ts";
+import React, { useState, useRef } from "react";
+import {
+  Search,
+  X,
+  Loader2,
+  Music,
+  Headphones,
+  Flame,
+  Disc3,
+  Globe,
+  Coffee,
+  Radio,
+  Sparkles,
+  Moon,
+  Zap,
+  Mic,
+  Gamepad2,
+} from "lucide-react";
+import { isValidTrackId, type Song } from "../types.ts";
 import { SongRow } from "../components/SongRow.tsx";
 
 interface SearchViewProps {
   onAddToPlaylist: (song: Song) => void;
+  sidebarExpanded?: boolean;
 }
 
-const QUICK_TAGS = [
-  "Sơn Tùng M-TP",
-  "V-Pop Thịnh Hành",
-  "Ballad Việt",
-  "Indie Việt",
-  "Lofi Chill",
-  "Acoustic Nhẹ Nhàng",
-  "US-UK Top Hits",
-  "Rap Việt",
+interface MoodCard {
+  id: string;
+  label: string;
+  subtitle: string;
+  query: string;
+  gradient: string;
+  icon: React.ReactNode;
+}
+
+const MOOD_MOMENTS: MoodCard[] = [
+  {
+    id: "chill",
+    label: "Chill & Lofi",
+    subtitle: "Nhạc thư giãn nhẹ nhàng",
+    query: "Lofi Chill Việt",
+    gradient: "from-[#1e2d3b] via-[#17212b] to-[#11151b]",
+    icon: <Coffee className="w-5 h-5 text-sky-300" />,
+  },
+  {
+    id: "vpop",
+    label: "V-Pop Thịnh Hành",
+    subtitle: "Bảng xếp hạng Việt Nam",
+    query: "V-Pop Thịnh Hành 2026",
+    gradient: "from-[#3a1f28] via-[#27161c] to-[#141115]",
+    icon: <Flame className="w-5 h-5 text-rose-300" />,
+  },
+  {
+    id: "remix",
+    label: "Remix & DJ",
+    subtitle: "Sôi động, Vinahouse, Club Mix",
+    query: "Nhạc Trẻ Remix DJ",
+    gradient: "from-[#2f233b] via-[#201929] to-[#131218]",
+    icon: <Disc3 className="w-5 h-5 text-violet-300" />,
+  },
+  {
+    id: "cjk",
+    label: "Nhạc Trung",
+    subtitle: "Cổ phong, Ballad & Douyin Remix",
+    query: "Nhạc Hoa Remix Douyin",
+    gradient: "from-[#3b281c] via-[#281c15] to-[#151211]",
+    icon: <Sparkles className="w-5 h-5 text-amber-300" />,
+  },
+  {
+    id: "indie",
+    label: "Indie Việt",
+    subtitle: "Giai điệu mộc mạc tự sự",
+    query: "Indie Việt hay nhất",
+    gradient: "from-[#1c332d] via-[#152420] to-[#101614]",
+    icon: <Headphones className="w-5 h-5 text-emerald-300" />,
+  },
+  {
+    id: "acoustic",
+    label: "Acoustic Cafe",
+    subtitle: "Guitar & Piano êm dịu",
+    query: "Acoustic Nhẹ Nhàng",
+    gradient: "from-[#332c1d] via-[#231f16] to-[#141310]",
+    icon: <Music className="w-5 h-5 text-yellow-200" />,
+  },
+  {
+    id: "usuk",
+    label: "US-UK Top Hits",
+    subtitle: "Pop, R&B quốc tế chọn lọc",
+    query: "US-UK Pop Hits",
+    gradient: "from-[#1d283d] via-[#161e2c] to-[#101319]",
+    icon: <Globe className="w-5 h-5 text-blue-300" />,
+  },
+  {
+    id: "ballad",
+    label: "Ballad Việt",
+    subtitle: "Những bản tình ca sâu lắng",
+    query: "Ballad Việt buồn",
+    gradient: "from-[#2c2533] via-[#1e1a24] to-[#121116]",
+    icon: <Radio className="w-5 h-5 text-pink-300" />,
+  },
+  {
+    id: "focus",
+    label: "Focus & Study",
+    subtitle: "Tập trung làm việc sâu",
+    query: "Study Beats Instrumental",
+    gradient: "from-[#1b2c30] via-[#142023] to-[#101416]",
+    icon: <Zap className="w-5 h-5 text-teal-300" />,
+  },
+  {
+    id: "rap",
+    label: "Rap Việt",
+    subtitle: "Hip-Hop & Melodic Rap",
+    query: "Rap Việt",
+    gradient: "from-[#36221f] via-[#261816] to-[#141111]",
+    icon: <Mic className="w-5 h-5 text-orange-300" />,
+  },
+  {
+    id: "gaming",
+    label: "Gaming & EDM",
+    subtitle: "Năng lượng cao cho chiến game",
+    query: "EDM Gaming Hits",
+    gradient: "from-[#1d2638] via-[#161c28] to-[#101218]",
+    icon: <Gamepad2 className="w-5 h-5 text-indigo-300" />,
+  },
+  {
+    id: "latenight",
+    label: "Đêm Muộn",
+    subtitle: "Giai điệu nhẹ cho giấc ngủ",
+    query: "Nhạc Chill Đêm Khuya",
+    gradient: "from-[#222230] via-[#181822] to-[#101015]",
+    icon: <Moon className="w-5 h-5 text-slate-300" />,
+  },
 ];
 
-export const SearchView: React.FC<SearchViewProps> = ({ onAddToPlaylist }) => {
+export const SearchView: React.FC<SearchViewProps> = ({
+  onAddToPlaylist,
+  sidebarExpanded = false,
+}) => {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<Song[]>([]);
   const [loading, setLoading] = useState(false);
@@ -35,7 +152,7 @@ export const SearchView: React.FC<SearchViewProps> = ({ onAddToPlaylist }) => {
       const songs = await window.mochyApi.searchSongs(searchTerm.trim());
       const validSongs = (songs || []).filter((s) => {
         const id = (s as any)?.videoId || s?.id;
-        return typeof id === "string" && id.trim().length === 11;
+        return isValidTrackId(id);
       });
       setResults(validSongs);
     } catch (err) {
@@ -72,102 +189,107 @@ export const SearchView: React.FC<SearchViewProps> = ({ onAddToPlaylist }) => {
     performSearch(query);
   };
 
-  const handleTagClick = (tag: string) => {
-    setQuery(tag);
-    performSearch(tag);
+  const handleMoodClick = (mood: MoodCard) => {
+    setQuery(mood.query);
+    performSearch(mood.query);
   };
 
+  const padClass = sidebarExpanded ? "pl-[288px] pr-8" : "pl-[96px] pr-8";
+
   return (
-    <div className="flex-1 overflow-y-auto p-6 space-y-5 select-none font-sans bg-[#090d14]">
-      {/* Search Input Bar - Retro-RPG Terminal Style */}
-      <form onSubmit={handleSubmit} className="relative max-w-2xl">
-        <div className="relative flex items-center bg-[#0f151f] border border-[#1e293b] focus-within:border-[#2589f5] focus-within:shadow-[0_0_12px_rgba(37,137,245,0.2)] rounded-md transition-all">
-          <div className="pl-3.5 pr-2 text-[#2ecc71] font-mono text-xs flex items-center gap-1.5 select-none">
-            <Terminal className="w-3.5 h-3.5" />
-            <span className="font-bold">&gt;</span>
-          </div>
+    <div
+      className={`flex-1 overflow-y-auto pt-20 pb-10 space-y-7 select-none font-sans bg-[#0a0a0c] text-[#f5f5f7] transition-[padding] duration-[350ms] ease-[cubic-bezier(0.22,1,0.36,1)] ${padClass}`}
+    >
+      {/* Page Title & Pill Search Input */}
+      <div className="space-y-4">
+        <h1 className="text-3xl font-bold text-white tracking-tight">Search</h1>
 
-          <input
-            type="text"
-            value={query}
-            onChange={handleInputChange}
-            placeholder="Nhập tên bài hát, nghệ sĩ hoặc từ khóa cần tìm..."
-            autoFocus
-            className="w-full h-11 bg-transparent text-xs text-white placeholder-[#475569] font-mono focus:outline-none pr-12"
-          />
-
-          {!query && (
-            <div className="absolute right-3 pointer-events-none flex items-center gap-1 text-[9px] font-mono text-[#8492a6] border border-[#1e293b] px-1.5 py-0.5 rounded-xs bg-[#090d14]">
-              <span>CTRL+F</span>
-            </div>
-          )}
-
-          {query && (
-            <button
-              type="button"
-              onClick={() => {
-                setQuery("");
-                setResults([]);
-                setHasSearched(false);
-              }}
-              className="absolute right-3 p-1 rounded-xs text-[#8492a6] hover:text-[#e74c3c]"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          )}
-        </div>
-      </form>
-
-      {/* Quick Discovery Tags */}
-      {!hasSearched && (
-        <div className="space-y-2.5">
-          <div className="flex items-center gap-2 text-[10px] font-mono text-[#475569] uppercase tracking-wider">
-            <Sparkles className="w-3 h-3 text-[#2589f5]" />
-            <span>// GỢI Ý TỪ KHÓA TÌM KIẾM</span>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {QUICK_TAGS.map((tag) => (
+        <form onSubmit={handleSubmit} className="relative max-w-xl">
+          <div className="relative flex items-center bg-white/[0.08] border border-white/[0.10] focus-within:bg-white/[0.12] focus-within:border-white/[0.22] rounded-full transition-all px-4 shadow-sm">
+            <Search className="w-4 h-4 text-white/50 mr-3 flex-shrink-0" />
+            <input
+              type="text"
+              value={query}
+              onChange={handleInputChange}
+              placeholder="Tìm bài hát, nghệ sĩ, bản remix hoặc từ khóa..."
+              autoFocus
+              className="w-full h-11 bg-transparent text-sm text-white placeholder-white/40 focus:outline-none pr-8"
+            />
+            {query && (
               <button
-                key={tag}
-                onClick={() => handleTagClick(tag)}
-                className="px-3 py-1.5 rounded-md bg-[#0f151f] border border-[#1e293b] text-[11px] font-mono text-[#8492a6] hover:text-[#2589f5] hover:border-[#2589f5] hover:bg-[#16202e] transition-all cursor-pointer shadow-xs"
+                type="button"
+                onClick={() => {
+                  setQuery("");
+                  setResults([]);
+                  setHasSearched(false);
+                }}
+                aria-label="Xóa từ khóa"
+                className="p-1.5 rounded-full text-white/50 hover:text-white hover:bg-white/[0.10] transition-colors cursor-pointer"
               >
-                [#{tag.replace(/\s+/g, "_")}]
+                <X className="w-4 h-4" />
+              </button>
+            )}
+          </div>
+        </form>
+      </div>
+
+      {/* Moods & Moments Grid (Idle) */}
+      {!hasSearched && (
+        <section className="space-y-4">
+          <h2 className="text-lg font-bold text-white tracking-tight">Moods &amp; moments</h2>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3.5">
+            {MOOD_MOMENTS.map((mood) => (
+              <button
+                type="button"
+                key={mood.id}
+                onClick={() => handleMoodClick(mood)}
+                className={`group relative overflow-hidden rounded-2xl p-4 h-28 bg-gradient-to-br ${mood.gradient} border border-white/[0.08] hover:border-white/[0.22] text-left flex flex-col justify-between transition-all hover:scale-[1.01] active:scale-[0.99] cursor-pointer shadow-lg`}
+              >
+                <div className="flex items-center justify-between">
+                  <span className="w-9 h-9 rounded-full bg-white/[0.10] backdrop-blur-md flex items-center justify-center">
+                    {mood.icon}
+                  </span>
+                  <span className="text-[10px] font-medium text-white/45 group-hover:text-white/75 transition-colors">
+                    Khám phá
+                  </span>
+                </div>
+
+                <div className="min-w-0">
+                  <p className="text-sm font-bold text-white truncate">{mood.label}</p>
+                  <p className="text-xs text-white/55 truncate mt-0.5">{mood.subtitle}</p>
+                </div>
               </button>
             ))}
           </div>
-        </div>
+        </section>
       )}
 
-      {/* Search Results Area */}
+      {/* Search Loading */}
       {loading && (
-        <div className="flex items-center justify-center py-16 gap-3 text-xs font-mono text-[#2589f5]">
-          <Loader2 className="w-5 h-5 animate-spin" />
-          <span>ĐANG_TRUY_VẤN_KHO_BÀI_HÁT...</span>
+        <div className="flex items-center justify-center py-20 gap-3 text-sm text-white/65">
+          <Loader2 className="w-5 h-5 animate-spin text-white" />
+          <span>Đang tìm kiếm trên YouTube &amp; SoundCloud...</span>
         </div>
       )}
 
+      {/* Empty Search Result */}
       {!loading && hasSearched && results.length === 0 && (
-        <div className="text-center py-16 text-[#475569] font-mono text-xs">
-          <Music className="w-8 h-8 mx-auto mb-2 opacity-30" />
-          <p>// KHÔNG TÌM THẤY KẾT QUẢ PHÙ HỢP</p>
+        <div className="text-center py-20 text-white/45">
+          <Music className="w-10 h-10 mx-auto mb-3 opacity-35" />
+          <p className="text-sm font-semibold text-white/75">Không tìm thấy kết quả phù hợp</p>
+          <p className="text-xs text-white/45 mt-1">Thử tìm bằng từ khóa hoặc tên nghệ sĩ khác</p>
         </div>
       )}
 
+      {/* Search Results Table */}
       {!loading && results.length > 0 && (
-        <div className="space-y-2">
-          <div className="flex items-center justify-between border-b border-[#1e293b] pb-2 text-[10px] font-mono text-[#8492a6]">
-            <span>// KẾT QUẢ TÌM KIẾM: {results.length} BÀI HÁT CHO "{query}"</span>
-            <span className="text-[#2ecc71] font-bold">STATUS: OK_200</span>
-          </div>
-
-          {/* Table Header Bar */}
-          <div className="flex items-center gap-3.5 px-3 py-1.5 text-[10px] font-mono text-[#475569] uppercase tracking-wider border-b border-[#1e293b]/60">
-            <span className="w-7 text-center">#</span>
-            <span className="w-9" />
-            <span className="flex-1">Tên bài hát / Ca sĩ</span>
-            <span className="w-12 text-right">Thời lượng</span>
-            <span className="w-20 text-right">Thao tác</span>
+        <section className="space-y-3">
+          <div className="flex items-center justify-between pb-1">
+            <h2 className="text-base font-bold text-white">
+              Kết quả cho &ldquo;{query}&rdquo;
+            </h2>
+            <span className="text-xs text-white/45">{results.length} bài hát</span>
           </div>
 
           <div className="space-y-1">
@@ -181,7 +303,7 @@ export const SearchView: React.FC<SearchViewProps> = ({ onAddToPlaylist }) => {
               />
             ))}
           </div>
-        </div>
+        </section>
       )}
     </div>
   );
