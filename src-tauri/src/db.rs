@@ -1,6 +1,6 @@
-use crate::models::{Artist, DbHistoryEvent, DbLyricsCache, DbPlaylist, DbSong};
+use crate::models::{Artist, BackupImportResult, DbHistoryEvent, DbLyricsCache, DbPlaylist, DbSong};
 use rusqlite::{params, Connection, OptionalExtension};
-use serde_json::Value;
+use serde_json::{json, Value};
 use std::path::Path;
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -131,11 +131,30 @@ impl MochyDatabase {
                 .or_else(|| v.as_f64().map(|f| f.round() as i64))
         });
 
-        let thumbnail_url = song
+        let raw_thumbnail_url = song
             .get("thumbnailUrl")
             .and_then(|v| v.as_str())
             .or_else(|| song.get("thumbnail").and_then(|v| v.as_str()))
-            .map(|s| s.to_string());
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty());
+
+        let is_yt_vid = id.len() == 11
+            && !id.starts_with("sc:")
+            && !id.starts_with("LP_")
+            && !id.starts_with("VL")
+            && !id.starts_with("UC")
+            && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_');
+
+        let thumbnail_url = match raw_thumbnail_url {
+            Some(ref u)
+                if is_yt_vid
+                    && (u.contains("googleusercontent.com") || u.contains("ggpht.com")) =>
+            {
+                Some(format!("https://i.ytimg.com/vi/{id}/mqdefault.jpg"))
+            }
+            None if is_yt_vid => Some(format!("https://i.ytimg.com/vi/{id}/mqdefault.jpg")),
+            other => other,
+        };
 
         let album_id = song
             .get("albumId")
@@ -246,7 +265,23 @@ impl MochyDatabase {
             }
         });
         let duration: i64 = row.get::<_, Option<i64>>("duration")?.unwrap_or(-1);
-        let thumbnail_url: Option<String> = row.get("thumbnail_url")?;
+        let raw_thumbnail_url: Option<String> = row.get("thumbnail_url")?;
+        let is_yt_vid = id.len() == 11
+            && !id.starts_with("sc:")
+            && !id.starts_with("LP_")
+            && !id.starts_with("VL")
+            && !id.starts_with("UC")
+            && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_');
+        let thumbnail_url = match raw_thumbnail_url {
+            Some(ref u)
+                if is_yt_vid
+                    && (u.contains("googleusercontent.com") || u.contains("ggpht.com")) =>
+            {
+                Some(format!("https://i.ytimg.com/vi/{id}/mqdefault.jpg"))
+            }
+            None if is_yt_vid => Some(format!("https://i.ytimg.com/vi/{id}/mqdefault.jpg")),
+            other => other,
+        };
         let album_id: Option<String> = row.get("album_id")?;
         let album_name: Option<String> = row.get("album_name")?;
         let explicit: i64 = row.get::<_, Option<i64>>("explicit")?.unwrap_or(0);
@@ -792,5 +827,176 @@ impl MochyDatabase {
         conn.execute("DELETE FROM settings WHERE key = ?1", params![key])
             .map_err(|e| e.to_string())?;
         Ok(())
+    }
+
+    pub fn export_backup_json(&self, frontend_settings: Option<Value>) -> Result<Value, String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+
+        // 1. Export all songs (library, liked, history metadata)
+        let mut song_stmt = conn
+            .prepare("SELECT * FROM song ORDER BY created_at DESC")
+            .map_err(|e| e.to_string())?;
+        let song_rows = song_stmt
+            .query_map([], Self::map_row_to_song)
+            .map_err(|e| e.to_string())?;
+        let mut songs = Vec::new();
+        for row in song_rows {
+            songs.push(row.map_err(|e| e.to_string())?);
+        }
+
+        // 2. Export all playlists with ordered song IDs
+        let mut pl_stmt = conn
+            .prepare(
+                r#"
+                SELECT p.*, COUNT(psm.song_id) as song_count
+                FROM playlist p
+                LEFT JOIN playlist_song_map psm ON p.id = psm.playlist_id
+                GROUP BY p.id
+                ORDER BY p.created_at ASC
+                "#,
+            )
+            .map_err(|e| e.to_string())?;
+        let pl_rows = pl_stmt
+            .query_map([], Self::map_row_to_playlist)
+            .map_err(|e| e.to_string())?;
+        let mut playlists_out = Vec::new();
+        for row in pl_rows {
+            let pl = row.map_err(|e| e.to_string())?;
+            let mut ids_stmt = conn
+                .prepare(
+                    "SELECT song_id FROM playlist_song_map WHERE playlist_id = ?1 ORDER BY position ASC",
+                )
+                .map_err(|e| e.to_string())?;
+            let id_rows = ids_stmt
+                .query_map(params![pl.id], |r| r.get::<_, String>(0))
+                .map_err(|e| e.to_string())?;
+            let mut song_ids = Vec::new();
+            for sid in id_rows {
+                song_ids.push(sid.map_err(|e| e.to_string())?);
+            }
+            playlists_out.push(json!({
+                "id": pl.id,
+                "name": pl.name,
+                "browseId": pl.browse_id,
+                "description": pl.description,
+                "thumbnailUrl": pl.thumbnail_url,
+                "createdAt": pl.created_at,
+                "updatedAt": pl.updated_at,
+                "songIds": song_ids,
+            }));
+        }
+
+        // 3. Safe non-sensitive sync settings
+        let read_opt_setting = |k: &str| -> Option<String> {
+            conn.query_row("SELECT value FROM settings WHERE key = ?1", params![k], |r| r.get(0))
+                .optional()
+                .ok()
+                .flatten()
+        };
+        let db_settings = json!({
+            "spotify_auto_sync": read_opt_setting("spotify_auto_sync"),
+            "spotify_sync_playlists": read_opt_setting("spotify_sync_playlists"),
+        });
+
+        Ok(json!({
+            "version": 1,
+            "app": "Tày Music",
+            "exportedAt": now_ms(),
+            "songs": songs,
+            "playlists": playlists_out,
+            "dbSettings": db_settings,
+            "frontendSettings": frontend_settings,
+        }))
+    }
+
+    pub fn import_backup_json(&self, backup: &Value) -> Result<BackupImportResult, String> {
+        let obj = backup
+            .as_object()
+            .ok_or_else(|| "File sao lưu JSON không hợp lệ.".to_string())?;
+
+        if !obj.contains_key("songs") && !obj.contains_key("playlists") {
+            return Err("File JSON không chứa dữ liệu bài hát hoặc playlist của Tày Music.".to_string());
+        }
+
+        let mut songs_restored = 0usize;
+        let mut liked_restored = 0usize;
+        let mut playlists_restored = 0usize;
+
+        if let Some(songs_arr) = obj.get("songs").and_then(|v| v.as_array()) {
+            for song_val in songs_arr {
+                if self.upsert_song_value(song_val).is_ok() {
+                    songs_restored += 1;
+                    if song_val.get("liked").and_then(|v| v.as_bool()) == Some(true) {
+                        let sid = song_val
+                            .get("id")
+                            .or_else(|| song_val.get("videoId"))
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .trim();
+                        if !sid.is_empty() && self.set_liked(sid, true, None).is_ok() {
+                            liked_restored += 1;
+                        }
+                    }
+                }
+            }
+        }
+
+        if let Some(pls_arr) = obj.get("playlists").and_then(|v| v.as_array()) {
+            for pl_val in pls_arr {
+                let Some(name) = pl_val.get("name").and_then(|v| v.as_str()).map(|s| s.trim()) else {
+                    continue;
+                };
+                if name.is_empty() {
+                    continue;
+                }
+                let desc = pl_val.get("description").and_then(|v| v.as_str());
+                let thumb = pl_val.get("thumbnailUrl").and_then(|v| v.as_str());
+                let browse_id = pl_val.get("browseId").and_then(|v| v.as_str());
+                let src_id = pl_val.get("id").and_then(|v| v.as_str());
+
+                let target_pl = if let Some(id) = src_id {
+                    if let Ok(Some(existing)) = self.get_playlist(id) {
+                        existing
+                    } else if let Ok(Some(by_name)) = self.find_playlist_by_name(name) {
+                        by_name
+                    } else {
+                        self.create_playlist(name, desc, thumb, browse_id)?
+                    }
+                } else if let Ok(Some(by_name)) = self.find_playlist_by_name(name) {
+                    by_name
+                } else {
+                    self.create_playlist(name, desc, thumb, browse_id)?
+                };
+
+                playlists_restored += 1;
+                if let Some(song_ids) = pl_val.get("songIds").and_then(|v| v.as_array()) {
+                    for sid_val in song_ids {
+                        if let Some(sid) = sid_val.as_str() {
+                            let _ = self.add_song_to_playlist(&target_pl.id, sid, None);
+                        }
+                    }
+                }
+            }
+        }
+
+        if let Some(db_settings) = obj.get("dbSettings").and_then(|v| v.as_object()) {
+            for key in ["spotify_auto_sync", "spotify_sync_playlists"] {
+                if let Some(val) = db_settings.get(key).and_then(|v| v.as_str()) {
+                    let _ = self.set_setting(key, val);
+                }
+            }
+        }
+
+        let frontend_settings = obj
+            .get("frontendSettings")
+            .filter(|v| !v.is_null())
+            .cloned();
+
+        Ok(BackupImportResult {
+            songs_restored,
+            liked_restored,
+            playlists_restored,
+            frontend_settings,
+        })
     }
 }

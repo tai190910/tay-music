@@ -20,14 +20,24 @@ import {
   Clock,
   Check,
   AudioLines,
+  Infinity as InfinityIcon,
+  ShieldCheck,
+  LogOut,
+  Loader2,
+  Radio,
+  FolderOpen,
+  Download,
+  Upload,
 } from "lucide-react";
 import { usePlayer, type AppSettings } from "../context/PlayerContext.tsx";
+import type { StorageInfo, YouTubeAccountInfo } from "../types.ts";
 
 interface SettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
   onOpenSpotifyImport: () => void;
   onHistoryCleared?: () => void;
+  focusPlaybackKey?: number;
 }
 
 type SettingsCategory = "playback" | "now-playing" | "audio" | "storage";
@@ -73,6 +83,15 @@ const TOGGLE_ITEMS: ToggleSettingMeta[] = [
     description: "Giữ chế độ phát ngẫu nhiên khi chuyển sang danh sách phát mới",
     keywords: "shuffle tron bai ngau nhien",
     icon: Shuffle,
+  },
+  {
+    key: "autoplayEnabled",
+    category: "playback",
+    section: "Trong lúc nghe",
+    title: "Tự động phát nhạc tương tự (Autoplay)",
+    description: "Tự động tìm và nối tiếp bài hát cùng chủ đề/vibe khi hết hàng đợi",
+    keywords: "autoplay tu dong phat smart radio goi y vibe playback",
+    icon: InfinityIcon,
   },
   {
     key: "dontSkipOnFailure",
@@ -144,8 +163,15 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   onClose,
   onOpenSpotifyImport,
   onHistoryCleared,
+  focusPlaybackKey = 0,
 }) => {
-  const { settings, updateSettings } = usePlayer();
+  const {
+    settings,
+    updateSettings,
+    resetBotCircuitBreaker,
+    discordStatus,
+    refreshDownloadedTracks,
+  } = usePlayer();
   const [activeCategory, setActiveCategory] = useState<SettingsCategory>("playback");
   const [searchQuery, setSearchQuery] = useState("");
   const [isClearingHistory, setIsClearingHistory] = useState(false);
@@ -153,13 +179,51 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [offsetFeedback, setOffsetFeedback] = useState<string | null>(null);
   const [savedOffsetCount, setSavedOffsetCount] = useState<number>(() => countSavedLyricOffsets());
 
+  const [storageInfo, setStorageInfo] = useState<StorageInfo | null>(null);
+  const [isMigratingDir, setIsMigratingDir] = useState(false);
+  const [dirFeedback, setDirFeedback] = useState<string | null>(null);
+  const [isBackingUp, setIsBackingUp] = useState(false);
+  const [backupFeedback, setBackupFeedback] = useState<string | null>(null);
+
+  const [ytAccount, setYtAccount] = useState<YouTubeAccountInfo | null>(null);
+  const [isLoggingInYt, setIsLoggingInYt] = useState(false);
+  const [ytAuthFeedback, setYtAuthFeedback] = useState<string | null>(null);
+
   useEffect(() => {
     if (isOpen) {
       setSavedOffsetCount(countSavedLyricOffsets());
       setHistoryFeedback(null);
       setOffsetFeedback(null);
+      setYtAuthFeedback(null);
+      setDirFeedback(null);
+      setBackupFeedback(null);
+      window.mochyApi
+        ?.youtubeGetAccount()
+        .then((acc) => setYtAccount(acc))
+        .catch(() => setYtAccount(null));
+      window.mochyApi
+        ?.getStorageInfo?.()
+        .then((info) => setStorageInfo(info))
+        .catch(() => {});
+      if (settings.discordRpcEnabled) {
+        window.mochyApi?.getDiscordRpcStatus?.().catch(() => {});
+      }
     }
-  }, [isOpen]);
+  }, [isOpen, settings.discordRpcEnabled]);
+
+  useEffect(() => {
+    if (focusPlaybackKey > 0) {
+      setActiveCategory("playback");
+      setSearchQuery("");
+    }
+  }, [focusPlaybackKey]);
+
+  useEffect(() => {
+    if (!window.mochyApi?.onYouTubeAuthChanged) return;
+    return window.mochyApi.onYouTubeAuthChanged((acc) => {
+      setYtAccount(acc);
+    });
+  }, []);
 
   const trimmedQuery = searchQuery.trim().toLowerCase();
 
@@ -171,6 +235,35 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       `${item.title} ${item.description} ${item.keywords} ${item.section}`
         .toLowerCase()
         .includes(trimmedQuery)
+    );
+  }, [activeCategory, trimmedQuery]);
+
+  const showYouTubeAuthControl = useMemo(() => {
+    if (!trimmedQuery) return activeCategory === "playback";
+    return (
+      "youtube music login account tai khoan dang nhap chong chan bot 429 cookie playback".includes(
+        trimmedQuery
+      ) ||
+      trimmedQuery.includes("youtube") ||
+      trimmedQuery.includes("bot") ||
+      trimmedQuery.includes("login") ||
+      trimmedQuery.includes("429") ||
+      trimmedQuery.includes("tài khoản") ||
+      trimmedQuery.includes("đăng nhập")
+    );
+  }, [activeCategory, trimmedQuery]);
+
+  const showDiscordControl = useMemo(() => {
+    if (!trimmedQuery) return activeCategory === "playback";
+    return (
+      "discord rich presence rpc device integration trang thai ket noi playback".includes(
+        trimmedQuery
+      ) ||
+      trimmedQuery.includes("discord") ||
+      trimmedQuery.includes("rich presence") ||
+      trimmedQuery.includes("rpc") ||
+      trimmedQuery.includes("device") ||
+      trimmedQuery.includes("integration")
     );
   }, [activeCategory, trimmedQuery]);
 
@@ -194,12 +287,20 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const showStorageActions = useMemo(() => {
     if (!trimmedQuery) return activeCategory === "storage";
     return (
-      "storage lich su history lyric offset reset spotify import".includes(trimmedQuery) ||
+      "storage lich su history lyric offset reset spotify import thu muc luu nhac folder offline backup restore sao luu khoi phuc json".includes(
+        trimmedQuery
+      ) ||
       trimmedQuery.includes("history") ||
       trimmedQuery.includes("offset") ||
       trimmedQuery.includes("spotify") ||
       trimmedQuery.includes("clear") ||
-      trimmedQuery.includes("xoa")
+      trimmedQuery.includes("xoa") ||
+      trimmedQuery.includes("folder") ||
+      trimmedQuery.includes("thư mục") ||
+      trimmedQuery.includes("backup") ||
+      trimmedQuery.includes("restore") ||
+      trimmedQuery.includes("sao lưu") ||
+      trimmedQuery.includes("nhạc")
     );
   }, [activeCategory, trimmedQuery]);
 
@@ -210,6 +311,112 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     acc[item.section].push(item);
     return acc;
   }, {});
+
+  const handleYouTubeLogin = async () => {
+    if (isLoggingInYt || !window.mochyApi) return;
+    setIsLoggingInYt(true);
+    setYtAuthFeedback(null);
+    try {
+      const acc = await window.mochyApi.youtubeOpenLogin();
+      if (acc && acc.loggedIn) {
+        setYtAccount(acc);
+        resetBotCircuitBreaker();
+        setYtAuthFeedback("Đã kết nối tài khoản YouTube và lưu Cookie xác thực thành công");
+      } else {
+        setYtAuthFeedback("Cửa sổ đăng nhập đã đóng mà chưa hoàn tất xác thực");
+      }
+    } catch (err) {
+      console.error("[SettingsModal] YouTube login failed:", err);
+      setYtAuthFeedback("Không thể mở cửa sổ đăng nhập YouTube, vui lòng thử lại");
+    } finally {
+      setIsLoggingInYt(false);
+    }
+  };
+
+  const handleYouTubeLogout = async () => {
+    if (isLoggingInYt || !window.mochyApi) return;
+    try {
+      await window.mochyApi.youtubeLogout();
+      setYtAccount(null);
+      setYtAuthFeedback("Đã đăng xuất và xóa Cookie YouTube cục bộ");
+    } catch (err) {
+      console.error("[SettingsModal] YouTube logout failed:", err);
+      setYtAuthFeedback("Không thể đăng xuất YouTube");
+    }
+  };
+
+  const handleChangeDownloadsDir = async () => {
+    if (isMigratingDir || !window.mochyApi?.pickDownloadsFolder) return;
+    setDirFeedback(null);
+    try {
+      const newDir = await window.mochyApi.pickDownloadsFolder();
+      if (!newDir || newDir === storageInfo?.downloadsDir) return;
+
+      let migrate = true;
+      if ((storageInfo?.trackCount ?? 0) > 0) {
+        migrate = window.confirm(
+          `Bạn có muốn chuyển toàn bộ ${storageInfo?.trackCount} bài hát (kèm ảnh bìa & lyrics) sang thư mục mới:\n"${newDir}"\n\nChọn OK để tự động di chuyển file cũ, hoặc Cancel để chỉ đổi đường dẫn.`
+        );
+      }
+
+      setIsMigratingDir(true);
+      const updated = await window.mochyApi.changeDownloadsDir(newDir, migrate);
+      setStorageInfo(updated);
+      await refreshDownloadedTracks();
+      setDirFeedback(
+        migrate && (storageInfo?.trackCount ?? 0) > 0
+          ? `Đã chuyển toàn bộ nhạc sang "${updated.downloadsDir}"`
+          : `Đã cập nhật thư mục lưu nhạc sang "${updated.downloadsDir}"`
+      );
+    } catch (err: any) {
+      const msg = typeof err === "string" ? err : err?.message || "Không thể đổi thư mục lưu nhạc";
+      setDirFeedback(`Lỗi: ${msg}`);
+    } finally {
+      setIsMigratingDir(false);
+    }
+  };
+
+  const handleExportBackup = async () => {
+    if (isBackingUp || !window.mochyApi?.exportUserDataBackup) return;
+    setIsBackingUp(true);
+    setBackupFeedback(null);
+    try {
+      const savedPath = await window.mochyApi.exportUserDataBackup(settings);
+      if (savedPath) {
+        setBackupFeedback(`Đã xuất bản sao lưu ra "${savedPath}"`);
+      }
+    } catch (err: any) {
+      const msg = typeof err === "string" ? err : err?.message || "Không thể xuất file sao lưu";
+      setBackupFeedback(`Lỗi xuất dữ liệu: ${msg}`);
+    } finally {
+      setIsBackingUp(false);
+    }
+  };
+
+  const handleImportBackup = async () => {
+    if (isBackingUp || !window.mochyApi?.importUserDataBackup) return;
+    setIsBackingUp(true);
+    setBackupFeedback(null);
+    try {
+      const res = await window.mochyApi.importUserDataBackup();
+      if (res) {
+        if (res.frontendSettings && typeof res.frontendSettings === "object") {
+          updateSettings(res.frontendSettings as Partial<AppSettings>);
+        }
+        window.dispatchEvent(new CustomEvent("tay-likes-changed"));
+        window.dispatchEvent(new CustomEvent("tay-playlist-changed"));
+        onHistoryCleared?.();
+        setBackupFeedback(
+          `Đã khôi phục ${res.songsRestored} bài hát, ${res.likedRestored} bài yêu thích và ${res.playlistsRestored} playlist`
+        );
+      }
+    } catch (err: any) {
+      const msg = typeof err === "string" ? err : err?.message || "Không thể nhập file sao lưu";
+      setBackupFeedback(`Lỗi nhập dữ liệu: ${msg}`);
+    } finally {
+      setIsBackingUp(false);
+    }
+  };
 
   const handleClearHistory = async () => {
     if (isClearingHistory) return;
@@ -338,6 +545,172 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
           {/* Scrollable Settings Body */}
           <div className="flex-1 overflow-y-auto px-7 pb-7 space-y-5">
+            {/* YouTube Account Anti-Bot Auth (Playback) */}
+            {showYouTubeAuthControl && (
+              <div>
+                <div className="text-[12px] font-semibold text-[#8e8e93] mb-2.5">
+                  Tài khoản &amp; Chống chặn Bot
+                </div>
+                <div className="rounded-2xl bg-white/[0.04] border border-white/[0.07] p-4 space-y-3">
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="flex items-start gap-3.5 min-w-0">
+                      <div
+                        className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 mt-0.5 ${
+                          ytAccount?.loggedIn
+                            ? "bg-emerald-500/20 border border-emerald-500/35 text-emerald-300"
+                            : "bg-white/[0.08] text-[#f5f5f7]"
+                        }`}
+                      >
+                        <ShieldCheck className="w-4 h-4" />
+                      </div>
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="text-[13.5px] font-medium text-[#f5f5f7]">
+                            Đăng nhập YouTube (Chống chặn Bot)
+                          </span>
+                          {ytAccount?.loggedIn ? (
+                            <span className="text-[10.5px] px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 font-semibold">
+                              Đã xác thực
+                            </span>
+                          ) : (
+                            <span className="text-[10.5px] px-2 py-0.5 rounded-full bg-white/[0.08] text-[#c7c7cc] border border-white/[0.10] font-medium">
+                              Chưa đăng nhập
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-[12px] text-[#8e8e93] leading-snug mt-1">
+                          {ytAccount?.loggedIn
+                            ? `Đang kết nối: ${ytAccount.accountName || "Tài khoản YouTube Music"}${
+                                ytAccount.channelHandle
+                                  ? ` (${ytAccount.channelHandle})`
+                                  : ytAccount.email
+                                    ? ` (${ytAccount.email})`
+                                    : ""
+                              }. Đính kèm tự động SAPISIDHASH & Cookie cho InnerTube.`
+                            : "Đăng nhập trực tiếp trên cửa sổ WebView2 của Tày Music để vượt lỗi LOGIN_REQUIRED (Sign in to confirm you're not a bot) và giảm lỗi HTTP 429."}
+                        </p>
+                        {ytAuthFeedback && (
+                          <p className="text-[11.5px] text-emerald-300 mt-1.5 flex items-center gap-1.5">
+                            <Check className="w-3.5 h-3.5 shrink-0" />
+                            <span>{ytAuthFeedback}</span>
+                          </p>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 shrink-0">
+                      {ytAccount?.loggedIn ? (
+                        <>
+                          <button
+                            type="button"
+                            onClick={handleYouTubeLogin}
+                            disabled={isLoggingInYt}
+                            className="min-h-[44px] px-3.5 rounded-full bg-white/[0.09] hover:bg-white/[0.18] text-[12px] font-medium text-[#f5f5f7] transition-colors disabled:opacity-50 cursor-pointer"
+                          >
+                            {isLoggingInYt ? "Đang mở..." : "Làm mới"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleYouTubeLogout}
+                            disabled={isLoggingInYt}
+                            aria-label="Đăng xuất tài khoản YouTube"
+                            className="min-h-[44px] px-3.5 rounded-full bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/30 text-[12px] font-medium text-rose-200 hover:text-white flex items-center gap-1.5 transition-colors disabled:opacity-50 cursor-pointer"
+                          >
+                            <LogOut className="w-3.5 h-3.5" />
+                            <span>Đăng xuất</span>
+                          </button>
+                        </>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={handleYouTubeLogin}
+                          disabled={isLoggingInYt}
+                          className="min-h-[44px] px-4 rounded-full bg-[#fa243c] hover:bg-[#ff3b52] text-white text-[12.5px] font-semibold flex items-center gap-2 transition-colors disabled:opacity-60 cursor-pointer shadow-sm"
+                        >
+                          {isLoggingInYt ? (
+                            <>
+                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                              <span>Đang chờ...</span>
+                            </>
+                          ) : (
+                            <span>Đăng nhập YouTube</span>
+                          )}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Device integration: Discord Rich Presence */}
+            {showDiscordControl && (
+              <div>
+                <div className="text-[12px] font-semibold text-[#8e8e93] mb-2.5">
+                  Kết nối thiết bị (Device integration)
+                </div>
+                <div className="rounded-2xl bg-white/[0.04] border border-white/[0.07] px-4 py-3.5 min-h-[76px] flex items-center justify-between gap-4 hover:bg-white/[0.025] transition-colors">
+                  <div className="flex items-center gap-3.5 min-w-0">
+                    <div
+                      className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 ${
+                        settings.discordRpcEnabled && discordStatus.connected
+                          ? "bg-[#5865F2]/25 border border-[#5865F2]/45 text-[#99aaff]"
+                          : "bg-white/[0.08] text-[#f5f5f7]"
+                      }`}
+                    >
+                      <Radio className="w-4 h-4" />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="text-[13.5px] font-medium text-[#f5f5f7]">
+                        Discord Rich Presence
+                      </div>
+                      <p className="text-[12px] text-[#8e8e93] leading-snug mt-0.5">
+                        Tự động hiển thị bài hát đang phát, ca sĩ, ảnh bìa và tiến trình thời gian thực lên trạng thái Discord
+                      </p>
+                      <div className="mt-1.5 flex items-center gap-1.5 text-[11.5px]">
+                        {!settings.discordRpcEnabled ? (
+                          <>
+                            <span className="w-2 h-2 rounded-full bg-[#6e6e73] shrink-0" />
+                            <span className="text-[#8e8e93]">Đang tắt</span>
+                          </>
+                        ) : discordStatus.connected ? (
+                          <>
+                            <span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0" />
+                            <span className="text-emerald-300 font-medium">Đã kết nối Discord</span>
+                          </>
+                        ) : (
+                          <>
+                            <span className="w-2 h-2 rounded-full bg-[#8e8e93] shrink-0" />
+                            <span className="text-[#9a9aa0]">
+                              Không tìm thấy Discord
+                              {!discordStatus.configured ? " • Chưa điền DISCORD_CLIENT_ID" : ""}
+                            </span>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={settings.discordRpcEnabled}
+                    aria-label="Discord Rich Presence"
+                    onClick={() => updateSettings({ discordRpcEnabled: !settings.discordRpcEnabled })}
+                    className={`relative w-12 h-7 rounded-full shrink-0 transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/40 cursor-pointer ${
+                      settings.discordRpcEnabled ? "bg-[#fa243c]" : "bg-white/[0.16]"
+                    }`}
+                  >
+                    <span
+                      className={`absolute top-1 left-1 w-5 h-5 rounded-full bg-white shadow-sm transition-transform duration-200 ${
+                        settings.discordRpcEnabled ? "translate-x-5" : "translate-x-0"
+                      }`}
+                    />
+                  </button>
+                </div>
+              </div>
+            )}
+
             {Object.entries(groupedToggles).map(([sectionName, items]) => (
               <div key={sectionName}>
                 <div className="text-[12px] font-semibold text-[#8e8e93] mb-2.5">
@@ -536,11 +909,106 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
             {/* Storage & Sources Section */}
             {showStorageActions && (
-              <div>
-                <div className="text-[12px] font-semibold text-[#8e8e93] mb-2.5">
-                  Bộ nhớ &amp; Nhập nhạc
+              <div className="space-y-4">
+                <div>
+                  <div className="text-[12px] font-semibold text-[#8e8e93] mb-2.5">
+                    Kho nhạc Offline &amp; Sao lưu dữ liệu
+                  </div>
+                  <div className="rounded-2xl bg-white/[0.04] border border-white/[0.07] divide-y divide-white/[0.06] overflow-hidden">
+                    {/* Downloads folder selector + migration */}
+                    <div className="px-4 py-3.5 min-h-[76px] flex items-center justify-between gap-4">
+                      <div className="flex items-start gap-3.5 min-w-0">
+                        <div className="w-9 h-9 rounded-full bg-emerald-500/15 border border-emerald-400/25 flex items-center justify-center shrink-0 text-emerald-300 mt-0.5">
+                          <FolderOpen className="w-4 h-4" />
+                        </div>
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="text-[13.5px] font-medium text-[#f5f5f7]">
+                              Thư mục lưu nhạc tải về
+                            </span>
+                            {storageInfo && (
+                              <span className="text-[11px] px-2 py-0.5 rounded-full bg-white/[0.08] text-emerald-300 font-medium tabular-nums">
+                                {storageInfo.trackCount} bài • {(storageInfo.totalBytes / (1024 * 1024)).toFixed(1)} MB
+                              </span>
+                            )}
+                          </div>
+                          <p
+                            className="text-[11.5px] text-[#8e8e93] mt-1 truncate max-w-[330px] font-mono"
+                            title={storageInfo?.downloadsDir || ""}
+                          >
+                            {storageInfo?.downloadsDir || "Đang tải đường dẫn..."}
+                          </p>
+                          {dirFeedback && (
+                            <p className="text-[11.5px] text-emerald-300 mt-1 flex items-center gap-1">
+                              <Check className="w-3.5 h-3.5 shrink-0" />
+                              <span className="truncate">{dirFeedback}</span>
+                            </p>
+                          )}
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={handleChangeDownloadsDir}
+                        disabled={isMigratingDir}
+                        className="min-h-[40px] px-4 rounded-full bg-white/[0.09] hover:bg-white/[0.18] text-[12.5px] font-medium text-[#f5f5f7] transition-colors shrink-0 disabled:opacity-50 flex items-center gap-1.5 cursor-pointer"
+                      >
+                        {isMigratingDir && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                        <span>{isMigratingDir ? "Đang chuyển..." : "Đổi thư mục"}</span>
+                      </button>
+                    </div>
+
+                    {/* Backup & Restore JSON */}
+                    <div className="px-4 py-3.5 min-h-[76px] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <div className="flex items-start gap-3.5 min-w-0">
+                        <div className="w-9 h-9 rounded-full bg-white/[0.08] flex items-center justify-center shrink-0 text-[#f5f5f7] mt-0.5">
+                          <HardDrive className="w-4 h-4" />
+                        </div>
+                        <div className="min-w-0">
+                          <div className="text-[13.5px] font-medium text-[#f5f5f7]">
+                            Sao lưu &amp; Khôi phục dữ liệu cũ
+                          </div>
+                          <p className="text-[12px] text-[#8e8e93] mt-0.5">
+                            Xuất hoặc nhập Playlists, Bài hát đã thích và Cài đặt (.json) khi đổi máy hoặc cài bản Setup
+                          </p>
+                          {backupFeedback && (
+                            <p className="text-[11.5px] text-emerald-300 mt-1 flex items-center gap-1">
+                              <Check className="w-3.5 h-3.5 shrink-0" />
+                              <span className="truncate">{backupFeedback}</span>
+                            </p>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2 shrink-0">
+                        <button
+                          type="button"
+                          onClick={handleExportBackup}
+                          disabled={isBackingUp}
+                          className="min-h-[40px] px-3.5 rounded-full bg-white/[0.09] hover:bg-white/[0.18] text-[12px] font-medium text-[#f5f5f7] transition-colors disabled:opacity-50 flex items-center gap-1.5 cursor-pointer"
+                        >
+                          <Download className="w-3.5 h-3.5" />
+                          <span>Xuất dữ liệu (.json)</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleImportBackup}
+                          disabled={isBackingUp}
+                          className="min-h-[40px] px-3.5 rounded-full bg-white text-[#121216] hover:bg-[#e5e5ea] text-[12px] font-semibold transition-colors disabled:opacity-50 flex items-center gap-1.5 cursor-pointer"
+                        >
+                          <Upload className="w-3.5 h-3.5" />
+                          <span>Nhập dữ liệu cũ (.json)</span>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
                 </div>
-                <div className="rounded-2xl bg-white/[0.04] border border-white/[0.07] divide-y divide-white/[0.06] overflow-hidden">
+
+                <div>
+                  <div className="text-[12px] font-semibold text-[#8e8e93] mb-2.5">
+                    Bộ nhớ &amp; Nhập nhạc
+                  </div>
+                  <div className="rounded-2xl bg-white/[0.04] border border-white/[0.07] divide-y divide-white/[0.06] overflow-hidden">
                   {/* Clear listening history */}
                   <div className="px-4 py-3.5 min-h-[68px] flex items-center justify-between gap-4">
                     <div className="flex items-center gap-3.5 min-w-0">
@@ -631,12 +1099,15 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     </button>
                   </div>
                 </div>
+                </div>
               </div>
             )}
 
             {/* Empty Search Results State */}
             {trimmedQuery &&
               filteredToggles.length === 0 &&
+              !showYouTubeAuthControl &&
+              !showDiscordControl &&
               !showCrossfadeControl &&
               !showQualityControl &&
               !showStorageActions && (

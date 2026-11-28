@@ -1,17 +1,27 @@
-use crate::cipher::CipherDeobfuscator;
+use crate::cipher::{CipherDeobfuscator, PlayerJsFetcher};
+use crate::db::now_ms;
 use crate::models::{Album, Artist, PlaybackData, PlaylistPageResult, SearchResult, SongItem};
 use crate::proxy::with_rn_param;
+use regex::Regex;
 use reqwest::Client;
 use serde_json::{json, Value};
 use sha1::{Digest, Sha1};
 use std::collections::HashMap;
-use std::sync::Arc;
-use tokio::sync::RwLock;
+use std::sync::atomic::{AtomicI64, Ordering};
+use std::sync::{Arc, OnceLock};
+use tokio::sync::{Mutex as AsyncMutex, RwLock, Semaphore};
+use tokio::time::{sleep, Duration};
 
 pub const ORIGIN_YOUTUBE: &str = "https://www.youtube.com";
 pub const ORIGIN_YOUTUBE_MUSIC: &str = "https://music.youtube.com";
 pub const USER_AGENT_WEB: &str =
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:140.0) Gecko/20100101 Firefox/140.0";
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
+
+const STREAM_CACHE_TTL_MS: i64 = 2 * 60 * 60 * 1000; // 2 hours
+const SEARCH_CACHE_TTL_MS: i64 = 5 * 60 * 1000; // 5 minutes
+const VISITOR_DATA_TTL_MS: i64 = 30 * 60 * 1000; // 30 minutes
+const MIN_REQUEST_INTERVAL_MS: i64 = 160;
+const RATE_LIMIT_COOLDOWN_MS: i64 = 12_000;
 
 #[allow(dead_code)]
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -56,6 +66,7 @@ pub struct YouTubeClient {
     pub own_visitor_id: bool,
 }
 
+#[allow(dead_code)]
 impl YouTubeClient {
     pub fn is_native_app(&self) -> bool {
         self.platform.is_some()
@@ -186,9 +197,9 @@ impl YouTubeClient {
             device_make: None,
             device_model: None,
             android_sdk_version: None,
-            login_supported: false,
+            login_supported: true,
             login_required: false,
-            use_signature_timestamp: false,
+            use_signature_timestamp: true,
             is_embedded: false,
             api_origin: ORIGIN_YOUTUBE_MUSIC,
             api_format_version: "1",
@@ -210,9 +221,9 @@ impl YouTubeClient {
             device_make: None,
             device_model: None,
             android_sdk_version: None,
-            login_supported: false,
+            login_supported: true,
             login_required: false,
-            use_signature_timestamp: false,
+            use_signature_timestamp: true,
             is_embedded: false,
             api_origin: ORIGIN_YOUTUBE,
             api_format_version: "1",
@@ -463,12 +474,31 @@ impl YouTubeClient {
     }
 }
 
+#[derive(Clone)]
+struct CachedStreamEntry {
+    data: PlaybackData,
+    expires_at_ms: i64,
+}
+
+#[derive(Clone)]
+struct CachedSearchEntry {
+    value: Value,
+    expires_at_ms: i64,
+}
+
 pub struct InnerTube {
     pub client: Client,
-    visitor_data: Arc<RwLock<Option<String>>>,
-    own_visitor_ids: Arc<RwLock<HashMap<String, String>>>,
+    visitor_data: Arc<RwLock<Option<(String, i64)>>>,
+    own_visitor_ids: Arc<RwLock<HashMap<String, (String, i64)>>>,
     cookie: Arc<RwLock<Option<String>>>,
     data_sync_id: Arc<RwLock<Option<String>>>,
+    auth_user: Arc<RwLock<String>>,
+    custom_user_agent: Arc<RwLock<Option<String>>>,
+    request_semaphore: Arc<Semaphore>,
+    last_request_ms: Arc<AsyncMutex<i64>>,
+    rate_limit_until_ms: Arc<AtomicI64>,
+    stream_cache: Arc<RwLock<HashMap<String, CachedStreamEntry>>>,
+    search_cache: Arc<RwLock<HashMap<String, CachedSearchEntry>>>,
 }
 
 impl InnerTube {
@@ -479,7 +509,154 @@ impl InnerTube {
             own_visitor_ids: Arc::new(RwLock::new(HashMap::new())),
             cookie: Arc::new(RwLock::new(None)),
             data_sync_id: Arc::new(RwLock::new(None)),
+            auth_user: Arc::new(RwLock::new("0".to_string())),
+            custom_user_agent: Arc::new(RwLock::new(None)),
+            request_semaphore: Arc::new(Semaphore::new(2)),
+            last_request_ms: Arc::new(AsyncMutex::new(0)),
+            rate_limit_until_ms: Arc::new(AtomicI64::new(0)),
+            stream_cache: Arc::new(RwLock::new(HashMap::new())),
+            search_cache: Arc::new(RwLock::new(HashMap::new())),
         }
+    }
+
+    pub async fn set_auth(
+        &self,
+        cookie: Option<String>,
+        data_sync_id: Option<String>,
+        auth_user: Option<String>,
+        user_agent: Option<String>,
+        visitor_data: Option<String>,
+    ) {
+        *self.cookie.write().await = cookie.filter(|s| !s.trim().is_empty());
+        *self.data_sync_id.write().await = data_sync_id.filter(|s| !s.trim().is_empty());
+        *self.auth_user.write().await = auth_user
+            .filter(|s| !s.trim().is_empty())
+            .unwrap_or_else(|| "0".to_string());
+        *self.custom_user_agent.write().await = user_agent.filter(|s| !s.trim().is_empty());
+        if let Some(vd) = visitor_data.filter(|s| !s.trim().is_empty()) {
+            *self.visitor_data.write().await = Some((vd, now_ms()));
+        }
+        self.rate_limit_until_ms.store(0, Ordering::SeqCst);
+        self.stream_cache.write().await.clear();
+        self.search_cache.write().await.clear();
+    }
+
+    pub async fn clear_auth(&self) {
+        *self.cookie.write().await = None;
+        *self.data_sync_id.write().await = None;
+        *self.auth_user.write().await = "0".to_string();
+        *self.custom_user_agent.write().await = None;
+        *self.visitor_data.write().await = None;
+        self.rate_limit_until_ms.store(0, Ordering::SeqCst);
+        self.stream_cache.write().await.clear();
+        self.search_cache.write().await.clear();
+    }
+
+    pub async fn has_cookie(&self) -> bool {
+        self.cookie
+            .read()
+            .await
+            .as_ref()
+            .map(|c| !c.trim().is_empty())
+            .unwrap_or(false)
+    }
+
+    pub async fn get_cached_stream(&self, video_id: &str, quality: &str) -> Option<PlaybackData> {
+        let key = format!("{video_id}:{quality}");
+        let now = now_ms();
+        let guard = self.stream_cache.read().await;
+        if let Some(entry) = guard.get(&key) {
+            if now < entry.expires_at_ms {
+                return Some(entry.data.clone());
+            }
+        }
+        None
+    }
+
+    pub async fn put_cached_stream(&self, video_id: &str, quality: &str, data: &PlaybackData) {
+        let key = format!("{video_id}:{quality}");
+        let now = now_ms();
+        let upstream_ttl_ms = data
+            .stream_expires_in_seconds
+            .saturating_sub(300)
+            .max(600)
+            * 1000;
+        let ttl_ms = STREAM_CACHE_TTL_MS.min(upstream_ttl_ms);
+        let mut guard = self.stream_cache.write().await;
+        if guard.len() >= 500 {
+            guard.retain(|_, v| now < v.expires_at_ms);
+            if guard.len() >= 500 {
+                if let Some(first_key) = guard.keys().next().cloned() {
+                    guard.remove(&first_key);
+                }
+            }
+        }
+        guard.insert(
+            key,
+            CachedStreamEntry {
+                data: data.clone(),
+                expires_at_ms: now + ttl_ms,
+            },
+        );
+    }
+
+    async fn send_innertube_post(
+        &self,
+        url: &str,
+        headers: reqwest::header::HeaderMap,
+        body: &Value,
+        context_label: &str,
+    ) -> Result<Value, String> {
+        let now = now_ms();
+        let cooldown_until = self.rate_limit_until_ms.load(Ordering::SeqCst);
+        if now < cooldown_until {
+            let secs = ((cooldown_until - now) / 1000).max(1);
+            return Err(format!(
+                "HTTP 429 Too Many Requests: YouTube đang tạm giới hạn tần suất truy vấn ({secs}s). Vui lòng đăng nhập YouTube trong Settings."
+            ));
+        }
+
+        let _permit = self
+            .request_semaphore
+            .acquire()
+            .await
+            .map_err(|e| e.to_string())?;
+
+        // Enforce gentle pacing so parallel searches/imports never burst-flood YouTube
+        {
+            let mut last_guard = self.last_request_ms.lock().await;
+            let cur = now_ms();
+            let elapsed = cur.saturating_sub(*last_guard);
+            if *last_guard > 0 && elapsed < MIN_REQUEST_INTERVAL_MS {
+                let wait_ms = (MIN_REQUEST_INTERVAL_MS - elapsed) as u64;
+                sleep(Duration::from_millis(wait_ms)).await;
+            }
+            *last_guard = now_ms();
+        }
+
+        let res = self
+            .client
+            .post(url)
+            .headers(headers)
+            .json(body)
+            .send()
+            .await
+            .map_err(|e| e.to_string())?;
+
+        let status = res.status();
+        if status.as_u16() == 429 {
+            self.rate_limit_until_ms
+                .store(now_ms() + RATE_LIMIT_COOLDOWN_MS, Ordering::SeqCst);
+            return Err(format!(
+                "HTTP 429 Too Many Requests ({context_label}): YouTube chặn tần suất truy vấn."
+            ));
+        }
+
+        if !status.is_success() {
+            return Err(format!("{context_label} returned HTTP {status}"));
+        }
+
+        res.json::<Value>().await.map_err(|e| e.to_string())
     }
 
     async fn build_headers(
@@ -498,85 +675,201 @@ impl InnerTube {
             }
         };
 
+        let cookie_opt = if set_login && yt_client.login_supported {
+            self.cookie.read().await.clone()
+        } else {
+            None
+        };
+
+        let effective_ua = if matches!(
+            yt_client.kind,
+            ClientKind::Web | ClientKind::WebRemix | ClientKind::WebCreator
+        ) {
+            self.custom_user_agent
+                .read()
+                .await
+                .clone()
+                .unwrap_or_else(|| yt_client.user_agent.to_string())
+        } else {
+            yt_client.user_agent.to_string()
+        };
+
         insert("Content-Type", "application/json");
         insert("X-Goog-Api-Format-Version", yt_client.api_format_version);
         insert("X-YouTube-Client-Name", yt_client.client_id);
         insert("X-YouTube-Client-Version", yt_client.client_version);
-        insert("User-Agent", yt_client.user_agent);
+        insert("User-Agent", &effective_ua);
         insert("Accept", "application/json");
-        insert("Accept-Language", "en-US,en;q=0.9");
+        insert("Accept-Language", "en-US,en;q=0.9,vi;q=0.8");
 
-        if !yt_client.is_native_app() {
+        if !yt_client.is_native_app() || cookie_opt.is_some() {
             insert("X-Origin", yt_client.api_origin);
             let referer = format!("{}/", yt_client.api_origin);
             insert("Referer", &referer);
             insert("Origin", yt_client.api_origin);
         }
 
-        let fallback_vd = self.visitor_data.read().await.clone();
+        let fallback_vd = self
+            .visitor_data
+            .read()
+            .await
+            .as_ref()
+            .map(|(v, _)| v.clone());
         if let Some(vd) = visitor.map(|s| s.to_string()).or(fallback_vd) {
             if !vd.is_empty() {
                 insert("X-Goog-Visitor-Id", &vd);
             }
         }
 
-        if set_login && yt_client.login_supported {
-            if let Some(ref c) = *self.cookie.read().await {
-                insert("Cookie", c);
-                if let Some(auth) = Self::sapisid_hash(c, yt_client.api_origin) {
-                    insert("Authorization", &auth);
-                }
+        if let Some(ref c) = cookie_opt {
+            insert("Cookie", c);
+            let auth_user = self.auth_user.read().await.clone();
+            insert("X-Goog-AuthUser", &auth_user);
+            if let Some(auth) = Self::sapisid_hash(c, yt_client.api_origin) {
+                insert("Authorization", &auth);
             }
         }
 
         headers
     }
 
-    fn sapisid_hash(cookie: &str, origin: &str) -> Option<String> {
-        let mut sapisid = None;
+    pub fn sapisid_hash(cookie: &str, origin: &str) -> Option<String> {
+        let mut sapisid: Option<String> = None;
+        let mut papisid_1p: Option<String> = None;
+        let mut papisid_3p: Option<String> = None;
+
         for part in cookie.split(';') {
             if let Some(idx) = part.find('=') {
                 let k = part[..idx].trim();
                 let v = part[idx + 1..].trim();
-                if k == "SAPISID" || k == "__Secure-3PAPISID" {
-                    sapisid = Some(v.to_string());
-                    break;
+                if v.is_empty() {
+                    continue;
+                }
+                match k {
+                    "SAPISID" => sapisid = Some(v.to_string()),
+                    "__Secure-1PAPISID" => papisid_1p = Some(v.to_string()),
+                    "__Secure-3PAPISID" => papisid_3p = Some(v.to_string()),
+                    _ => {}
                 }
             }
         }
-        let sapisid = sapisid?;
+
+        let primary = sapisid
+            .clone()
+            .or_else(|| papisid_3p.clone())
+            .or_else(|| papisid_1p.clone())?;
+
         let now_sec = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs();
-        let mut hasher = Sha1::new();
-        hasher.update(format!("{now_sec} {sapisid} {origin}").as_bytes());
-        let hash = hasher
-            .finalize()
-            .iter()
-            .map(|b| format!("{b:02x}"))
-            .collect::<String>();
-        Some(format!("SAPISIDHASH {now_sec}_{hash}"))
+
+        let compute = |token: &str| -> String {
+            let mut hasher = Sha1::new();
+            hasher.update(format!("{now_sec} {token} {origin}").as_bytes());
+            hasher
+                .finalize()
+                .iter()
+                .map(|b| format!("{b:02x}"))
+                .collect::<String>()
+        };
+
+        let mut tokens = vec![format!("SAPISIDHASH {now_sec}_{}", compute(&primary))];
+        if let Some(ref p1) = papisid_1p {
+            tokens.push(format!("SAPISID1PHASH {now_sec}_{}", compute(p1)));
+        }
+        if let Some(ref p3) = papisid_3p {
+            tokens.push(format!("SAPISID3PHASH {now_sec}_{}", compute(p3)));
+        }
+        Some(tokens.join(" "))
+    }
+
+    pub async fn fetch_fresh_ytm_visitor_data(&self) -> Option<String> {
+        static VD_JSON_RE: OnceLock<Regex> = OnceLock::new();
+        static VD_CGT_RE: OnceLock<Regex> = OnceLock::new();
+
+        let vd_json_re = VD_JSON_RE
+            .get_or_init(|| Regex::new(r#""VISITOR_DATA"\s*:\s*"([^"]+)""#).unwrap());
+        let vd_cgt_re = VD_CGT_RE
+            .get_or_init(|| Regex::new(r#"(Cgt[A-Za-z0-9_\-%]{12,})"#).unwrap());
+
+        for url in [
+            "https://music.youtube.com/sw.js_data",
+            "https://music.youtube.com/",
+        ] {
+            let Ok(res) = self
+                .client
+                .get(url)
+                .header("User-Agent", USER_AGENT_WEB)
+                .header("Accept-Language", "en-US,en;q=0.9")
+                .send()
+                .await
+            else {
+                continue;
+            };
+            if !res.status().is_success() {
+                continue;
+            }
+            let Ok(text) = res.text().await else {
+                continue;
+            };
+
+            let extracted = vd_json_re
+                .captures(&text)
+                .and_then(|c| c.get(1))
+                .map(|m| m.as_str().to_string())
+                .or_else(|| {
+                    vd_cgt_re
+                        .captures(&text)
+                        .and_then(|c| c.get(1))
+                        .map(|m| m.as_str().to_string())
+                });
+
+            if let Some(raw_vd) = extracted {
+                let clean_vd = raw_vd.trim().to_string();
+                if !clean_vd.is_empty() {
+                    *self.visitor_data.write().await = Some((clean_vd.clone(), now_ms()));
+                    return Some(clean_vd);
+                }
+            }
+        }
+
+        self.mint_visitor_id(&YouTubeClient::web_remix()).await
+    }
+
+    pub async fn ensure_session_visitor_data(&self) -> Option<String> {
+        let now = now_ms();
+        if let Some((ref vd, ts)) = *self.visitor_data.read().await {
+            if !vd.is_empty() && now - ts < VISITOR_DATA_TTL_MS {
+                return Some(vd.clone());
+            }
+        }
+        self.fetch_fresh_ytm_visitor_data().await
     }
 
     pub async fn get_visitor_data_for_client(&self, yt_client: &YouTubeClient) -> Option<String> {
+        let now = now_ms();
         if yt_client.own_visitor_id {
-            if let Some(v) = self
+            if let Some((v, ts)) = self
                 .own_visitor_ids
                 .read()
                 .await
                 .get(yt_client.client_name)
                 .cloned()
             {
-                return Some(v);
+                if now - ts < VISITOR_DATA_TTL_MS {
+                    return Some(v);
+                }
             }
             return self.mint_visitor_id(yt_client).await;
         }
-        let existing = self.visitor_data.read().await.clone();
-        if existing.is_some() {
-            return existing;
+
+        if let Some((existing, ts)) = self.visitor_data.read().await.clone() {
+            if !existing.is_empty() && now - ts < VISITOR_DATA_TTL_MS {
+                return Some(existing);
+            }
         }
-        self.mint_visitor_id(yt_client).await
+        self.fetch_fresh_ytm_visitor_data().await
     }
 
     pub async fn mint_visitor_id(&self, yt_client: &YouTubeClient) -> Option<String> {
@@ -586,32 +879,40 @@ impl InnerTube {
             "context": yt_client.to_context(None, None)
         });
 
-        let res = self
-            .client
-            .post(&url)
-            .headers(headers)
-            .json(&body)
-            .send()
+        let data = self
+            .send_innertube_post(&url, headers, &body, "YouTube visitor_id")
             .await
             .ok()?;
-        if !res.status().is_success() {
-            return None;
-        }
-        let data: Value = res.json().await.ok()?;
         let visitor = data
             .pointer("/responseContext/visitorData")
             .and_then(|v| v.as_str())
             .map(|s| s.to_string())?;
 
+        let now = now_ms();
         if yt_client.own_visitor_id {
             self.own_visitor_ids
                 .write()
                 .await
-                .insert(yt_client.client_name.to_string(), visitor.clone());
+                .insert(yt_client.client_name.to_string(), (visitor.clone(), now));
         } else {
-            *self.visitor_data.write().await = Some(visitor.clone());
+            *self.visitor_data.write().await = Some((visitor.clone(), now));
         }
         Some(visitor)
+    }
+
+    pub async fn account_menu(&self) -> Result<Value, String> {
+        let yt_client = YouTubeClient::web_remix();
+        let visitor = self.get_visitor_data_for_client(&yt_client).await;
+        let dsid = self.data_sync_id.read().await.clone();
+        let url = format!("{}/youtubei/v1/account/account_menu", yt_client.api_origin);
+        let headers = self.build_headers(&yt_client, true, visitor.as_deref()).await;
+        let body = json!({
+            "context": yt_client.to_context(visitor.as_deref(), dsid.as_deref()),
+            "deviceTheme": "DEVICE_THEME_SUPPORTED",
+            "userInterfaceTheme": "USER_INTERFACE_THEME_DARK"
+        });
+        self.send_innertube_post(&url, headers, &body, "YouTube account_menu")
+            .await
     }
 
     pub async fn search(
@@ -621,7 +922,35 @@ impl InnerTube {
         params: Option<&str>,
         continuation: Option<&str>,
     ) -> Result<Value, String> {
+        let cache_key = if continuation.is_none() {
+            Some(format!(
+                "{}|{}|{}|{}",
+                yt_client.client_name,
+                yt_client.api_origin,
+                query.unwrap_or(""),
+                params.unwrap_or("")
+            ))
+        } else {
+            None
+        };
+
+        if let Some(ref ck) = cache_key {
+            let now = now_ms();
+            if let Some(entry) = self.search_cache.read().await.get(ck) {
+                if now < entry.expires_at_ms {
+                    return Ok(entry.value.clone());
+                }
+            }
+        }
+
         let visitor = self.get_visitor_data_for_client(yt_client).await;
+        let has_login = self.has_cookie().await && yt_client.login_supported;
+        let dsid = if has_login {
+            self.data_sync_id.read().await.clone()
+        } else {
+            None
+        };
+
         let url = if let Some(cont) = continuation {
             format!(
                 "{}/youtubei/v1/search?continuation={}&ctoken={}",
@@ -632,11 +961,13 @@ impl InnerTube {
         } else {
             format!("{}/youtubei/v1/search", yt_client.api_origin)
         };
-        let headers = self.build_headers(yt_client, false, visitor.as_deref()).await;
+        let headers = self
+            .build_headers(yt_client, has_login, visitor.as_deref())
+            .await;
         let mut body = serde_json::Map::new();
         body.insert(
             "context".into(),
-            yt_client.to_context(visitor.as_deref(), None),
+            yt_client.to_context(visitor.as_deref(), dsid.as_deref()),
         );
         if let Some(q) = query {
             body.insert("query".into(), json!(q));
@@ -645,18 +976,31 @@ impl InnerTube {
             body.insert("params".into(), json!(p));
         }
 
-        let res = self
-            .client
-            .post(&url)
-            .headers(headers)
-            .json(&Value::Object(body))
-            .send()
-            .await
-            .map_err(|e| e.to_string())?;
-        if !res.status().is_success() {
-            return Err(format!("YouTube search returned HTTP {}", res.status()));
+        let val = self
+            .send_innertube_post(&url, headers, &Value::Object(body), "YouTube search")
+            .await?;
+
+        if let Some(ck) = cache_key {
+            let now = now_ms();
+            let mut guard = self.search_cache.write().await;
+            if guard.len() >= 120 {
+                guard.retain(|_, v| now < v.expires_at_ms);
+                if guard.len() >= 120 {
+                    if let Some(k) = guard.keys().next().cloned() {
+                        guard.remove(&k);
+                    }
+                }
+            }
+            guard.insert(
+                ck,
+                CachedSearchEntry {
+                    value: val.clone(),
+                    expires_at_ms: now + SEARCH_CACHE_TTL_MS,
+                },
+            );
         }
-        res.json::<Value>().await.map_err(|e| e.to_string())
+
+        Ok(val)
     }
 
     pub async fn browse(
@@ -701,18 +1045,8 @@ impl InnerTube {
             body.insert("continuation".into(), json!(c));
         }
 
-        let res = self
-            .client
-            .post(&url)
-            .headers(headers)
-            .json(&Value::Object(body))
-            .send()
+        self.send_innertube_post(&url, headers, &Value::Object(body), "YouTube browse")
             .await
-            .map_err(|e| e.to_string())?;
-        if !res.status().is_success() {
-            return Err(format!("YouTube browse returned HTTP {}", res.status()));
-        }
-        res.json::<Value>().await.map_err(|e| e.to_string())
     }
 
     pub async fn player(
@@ -760,18 +1094,8 @@ impl InnerTube {
             );
         }
 
-        let res = self
-            .client
-            .post(&url)
-            .headers(headers)
-            .json(&Value::Object(body))
-            .send()
+        self.send_innertube_post(&url, headers, &Value::Object(body), "YouTube player API")
             .await
-            .map_err(|e| e.to_string())?;
-        if !res.status().is_success() {
-            return Err(format!("YouTube player API returned HTTP {}", res.status()));
-        }
-        res.json::<Value>().await.map_err(|e| e.to_string())
     }
 }
 
@@ -806,12 +1130,16 @@ impl YouTube {
             }
         };
 
-        // Prefer stable high-resolution thumbnails (avoid maxresdefault when hq/sd/API URL exists)
+        // Prefer static CDN thumbnails (avoid maxresdefault and yt3.googleusercontent.com rate-limits)
         if let Some(stable) = arr
             .iter()
             .rev()
             .filter_map(|v| v.get("url").and_then(|u| u.as_str()).map(normalize))
-            .find(|url| !url.is_empty() && !url.contains("maxresdefault"))
+            .find(|url| {
+                !url.is_empty()
+                    && !url.contains("maxresdefault")
+                    && !url.contains("yt3.googleusercontent.com")
+            })
         {
             return stable;
         }
@@ -819,7 +1147,7 @@ impl YouTube {
         arr.iter()
             .rev()
             .filter_map(|v| v.get("url").and_then(|u| u.as_str()).map(normalize))
-            .find(|url| !url.is_empty())
+            .find(|url| !url.is_empty() && !url.contains("yt3.googleusercontent.com"))
             .unwrap_or_default()
     }
 
@@ -1041,10 +1369,10 @@ impl YouTube {
                 .map(|t| t != "MUSIC_VIDEO_TYPE_ATV")
                 .unwrap_or(false);
 
-            let thumbnail = if !thumbnail_url.is_empty() {
+            let thumbnail = if vid.len() == 11 {
+                Some(format!("https://i.ytimg.com/vi/{vid}/mqdefault.jpg"))
+            } else if !thumbnail_url.is_empty() {
                 Some(thumbnail_url)
-            } else if vid.len() == 11 {
-                Some(format!("https://i.ytimg.com/vi/{vid}/hqdefault.jpg"))
             } else {
                 None
             };
@@ -1261,16 +1589,18 @@ impl YouTube {
         };
         let author = if owner.is_empty() { None } else { Some(owner) };
 
-        let thumb = Self::extract_thumbnail_url(
-            v.pointer("/thumbnail/thumbnails")
-                .and_then(|t| t.as_array()),
-        );
-        let thumbnail = if !thumb.is_empty() {
-            Some(thumb)
-        } else if vid.len() == 11 {
-            Some(format!("https://i.ytimg.com/vi/{vid}/hqdefault.jpg"))
+        let thumbnail = if vid.len() == 11 {
+            Some(format!("https://i.ytimg.com/vi/{vid}/mqdefault.jpg"))
         } else {
-            None
+            let thumb = Self::extract_thumbnail_url(
+                v.pointer("/thumbnail/thumbnails")
+                    .and_then(|t| t.as_array()),
+            );
+            if thumb.is_empty() {
+                None
+            } else {
+                Some(thumb)
+            }
         };
 
         Some(SongItem {
@@ -1440,74 +1770,85 @@ impl YTPlayerUtils {
             return Err(format!("Invalid 11-character videoId: \"{video_id}\""));
         }
 
-        if inner.visitor_data.read().await.is_none() {
-            let _ = inner.mint_visitor_id(&YouTubeClient::web_remix()).await;
+        if let Some(cached) = inner.get_cached_stream(video_id, quality).await {
+            return Ok(cached);
         }
 
-        let main_client = YouTubeClient::visionos();
+        let _ = inner.ensure_session_visitor_data().await;
+        let has_login = inner.has_cookie().await;
+
+        // Distinct, non-repeating client sequence:
+        // - Logged-in: prioritize Cookie + SAPISIDHASH clients (WEB_REMIX, WEB, ANDROID) first to bypass bot checks.
+        // - Anonymous: use fresh YTM visitorData + stable clients (only 1 ANDROID_VR version, never 3 in a row).
+        let clients_to_try: Vec<YouTubeClient> = if has_login {
+            vec![
+                YouTubeClient::web_remix(),
+                YouTubeClient::tvhtml5_simply_embedded(),
+                YouTubeClient::web(),
+                YouTubeClient::mobile(),
+                YouTubeClient::web_creator(),
+                YouTubeClient::visionos(),
+                YouTubeClient::android_vr_1_61_48(),
+            ]
+        } else {
+            vec![
+                YouTubeClient::visionos(),
+                YouTubeClient::android_vr_1_61_48(),
+                YouTubeClient::tvhtml5_simply_embedded(),
+                YouTubeClient::web_remix(),
+                YouTubeClient::ipados(),
+            ]
+        };
+
         let mut failures: Vec<String> = Vec::new();
-        let mut main_player_response: Option<Value> = None;
-
-        match inner
-            .player(&main_client, video_id, None, None, None)
-            .await
-        {
-            Ok(mut answer) => {
-                if Self::is_bot_check(&answer) {
-                    let _ = inner.mint_visitor_id(&main_client).await;
-                    if let Ok(retried) = inner
-                        .player(&main_client, video_id, None, None, None)
-                        .await
-                    {
-                        answer = retried;
-                    }
-                }
-                main_player_response = Some(answer);
-            }
-            Err(e) => failures.push(format!("VISIONOS: {e}")),
-        }
-
-        let clients_to_try = vec![
-            YouTubeClient::visionos(),
-            YouTubeClient::web_remix(),
-            YouTubeClient::web(),
-            YouTubeClient::web_creator(),
-            YouTubeClient::ipados(),
-            YouTubeClient::android_vr_1_43_32(),
-            YouTubeClient::android_vr_1_61_48(),
-            YouTubeClient::android_vr_1_65_10(),
-            YouTubeClient::tvhtml5_simply_embedded(),
-            YouTubeClient::tvhtml5(),
-            YouTubeClient::android_creator(),
-            YouTubeClient::mobile(),
-        ];
+        let mut sts_cached: Option<Option<i64>> = None;
+        let mut bot_check_count = 0usize;
+        let mut visitor_refreshed_on_bot = false;
 
         for yt_client in clients_to_try {
-            let resp_opt = if yt_client.kind == ClientKind::VisionOs {
-                if main_player_response
-                    .as_ref()
-                    .and_then(|r| r.pointer("/playabilityStatus/status"))
-                    .and_then(|v| v.as_str())
-                    == Some("OK")
-                {
-                    main_player_response.clone()
-                } else {
-                    None
-                }
-            } else if yt_client.login_required {
+            if yt_client.login_required && !has_login {
                 continue;
-            } else {
-                match inner.player(&yt_client, video_id, None, None, None).await {
-                    Ok(r) => Some(r),
-                    Err(e) => {
-                        failures.push(format!("{}: {e}", yt_client.client_name));
-                        continue;
+            }
+
+            let sts = if yt_client.use_signature_timestamp {
+                match sts_cached {
+                    Some(val) => val,
+                    None => {
+                        let fetched = PlayerJsFetcher::get_signature_timestamp(&inner.client).await;
+                        sts_cached = Some(fetched);
+                        fetched
                     }
                 }
+            } else {
+                None
             };
 
-            let Some(resp) = resp_opt else {
-                continue;
+            let resp = match inner.player(&yt_client, video_id, None, sts, None).await {
+                Ok(mut r) => {
+                    if !has_login && Self::is_bot_check(&r) && !visitor_refreshed_on_bot {
+                        visitor_refreshed_on_bot = true;
+                        if yt_client.own_visitor_id {
+                            let _ = inner.mint_visitor_id(&yt_client).await;
+                        } else {
+                            let _ = inner.fetch_fresh_ytm_visitor_data().await;
+                        }
+                        if let Ok(retried) = inner.player(&yt_client, video_id, None, sts, None).await {
+                            r = retried;
+                        }
+                    }
+                    r
+                }
+                Err(e) => {
+                    let is_429 = e.contains("429") || e.to_lowercase().contains("too many requests");
+                    failures.push(format!("{}: {e}", yt_client.client_name));
+                    if is_429 {
+                        return Err(format!(
+                            "HTTP 429 Too Many Requests ({video_id}): {}",
+                            failures.join(" | ")
+                        ));
+                    }
+                    continue;
+                }
             };
 
             let status = resp
@@ -1520,6 +1861,14 @@ impl YTPlayerUtils {
                     .and_then(|v| v.as_str())
                     .unwrap_or("");
                 failures.push(format!("{}: {status} ({reason})", yt_client.client_name));
+
+                if Self::is_bot_check(&resp) {
+                    bot_check_count += 1;
+                    // Stop hammering further clients once 3 distinct clients confirm an IP-level bot gate
+                    if !has_login && bot_check_count >= 3 {
+                        break;
+                    }
+                }
                 continue;
             }
 
@@ -1581,7 +1930,7 @@ impl YTPlayerUtils {
                         })
                         .unwrap_or(21600);
 
-                    return Ok(PlaybackData {
+                    let playback = PlaybackData {
                         audio_config: resp.pointer("/playerConfig/audioConfig").cloned(),
                         video_details: resp.get("videoDetails").cloned(),
                         playback_tracking: resp.get("playbackTracking").cloned(),
@@ -1591,9 +1940,19 @@ impl YTPlayerUtils {
                         stream_expires_in_seconds: expires,
                         stream_client: yt_client.client_name.to_string(),
                         stream_headers,
-                    });
+                    };
+
+                    inner.put_cached_stream(video_id, quality, &playback).await;
+                    return Ok(playback);
                 }
             }
+        }
+
+        if bot_check_count > 0 {
+            return Err(format!(
+                "LOGIN_REQUIRED: Sign in to confirm you're not a bot ({video_id}) | {}",
+                failures.join(" | ")
+            ));
         }
 
         Err(format!(

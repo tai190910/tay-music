@@ -16,9 +16,11 @@ import {
   RefreshCw,
   Maximize2,
   Plus,
+  WifiOff,
 } from "lucide-react";
 import { usePlayer } from "../context/PlayerContext.tsx";
 import { TrackThumbnail } from "./TrackThumbnail.tsx";
+import { DownloadButton } from "./DownloadButton.tsx";
 import { usePlaylistPicker } from "./PlaylistPickerPopover.tsx";
 import appIcon from "../assets/app-icon.png";
 
@@ -37,6 +39,7 @@ export const PlayerBar: React.FC<PlayerBarProps> = ({ sidebarExpanded = false })
     isShuffle,
     isLiked,
     isLoadingStream,
+    isOnline,
     rightDrawerTab,
     activePlaylistId,
     togglePlay,
@@ -199,6 +202,8 @@ export const PlayerBar: React.FC<PlayerBarProps> = ({ sidebarExpanded = false })
                 <Plus className="w-3.5 h-3.5" />
               </button>
 
+              <DownloadButton song={currentSong} size="sm" />
+
               <button
                 type="button"
                 onClick={() => openQuickSwitch(currentSong, activePlaylistId)}
@@ -215,6 +220,7 @@ export const PlayerBar: React.FC<PlayerBarProps> = ({ sidebarExpanded = false })
             <img
               src={appIcon}
               alt="Tày Music"
+              decoding="async"
               className="w-9 h-9 rounded-xl object-cover flex-shrink-0 border border-white/[0.12] shadow-sm"
             />
             <div className="flex flex-col min-w-0 pr-1">
@@ -271,6 +277,15 @@ export const PlayerBar: React.FC<PlayerBarProps> = ({ sidebarExpanded = false })
 
         {/* Secondary Controls: Shuffle, Repeat, Queue Drawer, Lyrics Drawer, Fullscreen */}
         <div className="flex items-center gap-0.5 flex-shrink-0">
+          {!isOnline && (
+            <span
+              title="Mất kết nối mạng: Chỉ phát được các bài đã tải Offline"
+              className="hidden md:inline-flex items-center gap-1 px-2 py-0.5 mr-1 rounded-full bg-amber-500/15 border border-amber-400/35 text-amber-200 text-[10.5px] font-medium"
+            >
+              <WifiOff className="w-3 h-3" />
+              <span>Chế độ Offline</span>
+            </span>
+          )}
           <button
             type="button"
             onClick={toggleShuffle}

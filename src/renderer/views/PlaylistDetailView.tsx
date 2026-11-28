@@ -1,7 +1,7 @@
 // src/renderer/views/PlaylistDetailView.tsx
 
 import React, { useEffect, useState } from "react";
-import { ArrowLeft, Play, Trash2, ListMusic, Shuffle } from "lucide-react";
+import { ArrowLeft, Play, Trash2, ListMusic, Shuffle, ArrowDownToLine, CheckCircle2, Loader2 } from "lucide-react";
 import type { Playlist, Song } from "../types.ts";
 import { SongRow } from "../components/SongRow.tsx";
 import { FixMatchModal } from "../components/FixMatchModal.tsx";
@@ -23,7 +23,17 @@ export const PlaylistDetailView: React.FC<PlaylistDetailViewProps> = ({
   onPlaylistDeleted,
   sidebarExpanded = false,
 }) => {
-  const { playSong, lastSwitchedVersion, toggleShuffle, isShuffle } = usePlayer();
+  const {
+    playSong,
+    lastSwitchedVersion,
+    toggleShuffle,
+    isShuffle,
+    downloadedMap,
+    downloadProgressMap,
+    downloadTrack,
+    isOnline,
+    showInfoToast,
+  } = usePlayer();
   const [playlist, setPlaylist] = useState<Playlist | null>(null);
   const [songs, setSongs] = useState<Song[]>([]);
   const [loading, setLoading] = useState(true);
@@ -114,6 +124,30 @@ export const PlaylistDetailView: React.FC<PlaylistDetailViewProps> = ({
     }
   };
 
+  const downloadedInPlaylist = songs.filter((s) => Boolean(downloadedMap[(s.videoId || s.id || "").trim()])).length;
+  const activeInPlaylist = songs.filter((s) => {
+    const st = downloadProgressMap[(s.videoId || s.id || "").trim()]?.status;
+    return st === "queued" || st === "downloading";
+  }).length;
+  const allDownloadedInPlaylist = songs.length > 0 && downloadedInPlaylist === songs.length;
+
+  const handleDownloadPlaylist = () => {
+    if (!isOnline) {
+      showInfoToast("Cần kết nối mạng để tải danh sách phát xuống thiết bị");
+      return;
+    }
+    const pending = songs.filter((s) => {
+      const vid = (s.videoId || s.id || "").trim();
+      const st = downloadProgressMap[vid]?.status;
+      return vid && !downloadedMap[vid] && st !== "queued" && st !== "downloading";
+    });
+    if (pending.length === 0) return;
+    showInfoToast(`Đang xếp hàng tải ${pending.length} bài hát xuống máy...`);
+    for (const s of pending) {
+      void downloadTrack(s);
+    }
+  };
+
   const padClass = sidebarExpanded ? "pl-[288px] pr-8" : "pl-[96px] pr-8";
 
   if (!playlist && !loading) {
@@ -139,10 +173,11 @@ export const PlaylistDetailView: React.FC<PlaylistDetailViewProps> = ({
   return (
     <div className="flex-1 overflow-y-auto bg-[#0a0a0c] text-[#f5f5f7] select-none font-sans relative pb-12">
       {/* Subtle Ambient Backdrop behind Playlist Header */}
-      {playlist?.thumbnailUrl && (
+      {(playlist?.thumbnailUrl || songs[0]) && (
         <div aria-hidden="true" className="absolute inset-x-0 top-0 h-80 overflow-hidden pointer-events-none">
           <TrackThumbnail
-            src={playlist.thumbnailUrl}
+            src={playlist?.thumbnailUrl || songs[0]?.thumbnail}
+            videoId={songs[0] ? songs[0].videoId || songs[0].id : null}
             isAmbient
             imgClassName="w-full h-full object-cover blur-3xl opacity-20 scale-125"
           />
@@ -167,7 +202,8 @@ export const PlaylistDetailView: React.FC<PlaylistDetailViewProps> = ({
         {/* Playlist Header */}
         <div className="flex flex-col sm:flex-row items-start sm:items-end gap-6">
           <TrackThumbnail
-            src={playlist?.thumbnailUrl}
+            src={playlist?.thumbnailUrl || songs[0]?.thumbnail}
+            videoId={!playlist?.thumbnailUrl || /googleusercontent\.com/i.test(playlist.thumbnailUrl) ? (songs[0] ? songs[0].videoId || songs[0].id : null) : null}
             alt={playlist?.name || "Playlist"}
             iconSize="xl"
             className="w-44 h-44 sm:w-52 sm:h-52 rounded-[22px] bg-[#18181d] border border-white/[0.10] flex-shrink-0 shadow-[0_20px_50px_rgba(0,0,0,0.6)] relative group"
@@ -210,6 +246,36 @@ export const PlaylistDetailView: React.FC<PlaylistDetailViewProps> = ({
               >
                 <Shuffle className="w-3.5 h-3.5" />
                 <span>Trộn bài</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleDownloadPlaylist}
+                disabled={songs.length === 0 || allDownloadedInPlaylist}
+                className={`px-5 py-2 rounded-full border text-xs font-semibold flex items-center gap-2 transition-all disabled:opacity-75 cursor-pointer ${
+                  allDownloadedInPlaylist
+                    ? "bg-emerald-500/15 border-emerald-400/35 text-emerald-300"
+                    : "bg-white/[0.10] hover:bg-white/[0.18] border-white/[0.10] text-white"
+                }`}
+              >
+                {allDownloadedInPlaylist ? (
+                  <>
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    <span>Đã tải ({songs.length}/{songs.length})</span>
+                  </>
+                ) : activeInPlaylist > 0 ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>
+                      Đang tải ({downloadedInPlaylist}/{songs.length})
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <ArrowDownToLine className="w-3.5 h-3.5" />
+                    <span>Tải cả Playlist</span>
+                  </>
+                )}
               </button>
 
               <button

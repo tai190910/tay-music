@@ -1972,14 +1972,32 @@ impl TrackMatcher {
         }
         let tier1_backup = self.pick(&vocal_track, &scored_songs, Self::SONG_FALLBACK_ACCEPT);
 
-        // Tier 2: YouTube Videos + YT Music General
-        let (yt_videos, ytm_general) = tokio::join!(
-            Self::search_yt_videos_with_retry(inner, &q_primary),
-            Self::search_general_with_retry(inner, &q_primary)
-        );
+        // Tier 2: YouTube Videos first, then YT Music General only if needed
+        let yt_videos = Self::search_yt_videos_with_retry(inner, &q_primary).await;
         let mut seen_t2 = HashSet::new();
         let mut t2_pool = Vec::new();
-        for item in yt_videos.into_iter().chain(ytm_general.into_iter()) {
+        for item in yt_videos {
+            if !item.id.is_empty() && seen_t2.insert(item.id.clone()) {
+                t2_pool.push(item);
+            }
+        }
+
+        let scored_t2_first: Vec<(&SongItem, f64)> = t2_pool
+            .iter()
+            .map(|v| {
+                (
+                    v,
+                    self.score_for_tier_with_mode(&vocal_track, v, MatchTier::Tier2YtVideo, false),
+                )
+            })
+            .collect();
+        if let Some(best_t2) = self.pick(&vocal_track, &scored_t2_first, Self::VIDEO_ACCEPT) {
+            self.cache.insert(cache_key, Some(best_t2.clone()));
+            return Some(best_t2);
+        }
+
+        let ytm_general = Self::search_general_with_retry(inner, &q_primary).await;
+        for item in ytm_general {
             if !item.id.is_empty() && seen_t2.insert(item.id.clone()) {
                 t2_pool.push(item);
             }
@@ -2383,7 +2401,7 @@ impl MusicImportService {
             }
 
             if i + 1 < total {
-                sleep(Duration::from_millis(250)).await;
+                sleep(Duration::from_millis(450)).await;
             }
         }
 
@@ -2587,7 +2605,7 @@ impl MusicImportService {
             }
 
             if i + 1 < total {
-                sleep(Duration::from_millis(250)).await;
+                sleep(Duration::from_millis(450)).await;
             }
         }
 

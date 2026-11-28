@@ -21,6 +21,35 @@ const ICON_CLASSES: Record<NonNullable<TrackThumbnailProps["iconSize"]>, string>
   xl: "w-12 h-12",
 };
 
+const MAX_FAILED_CACHE_SIZE = 2000;
+const failedThumbnailCache = new Set<string>();
+const localCoverMap = new Map<string, string>();
+
+export function syncLocalCoverCache(
+  tracks: Array<{ videoId: string; localCoverUrl?: string | null }>
+): void {
+  localCoverMap.clear();
+  for (const t of tracks) {
+    if (t.videoId && t.localCoverUrl) {
+      localCoverMap.set(t.videoId, t.localCoverUrl);
+    }
+  }
+}
+
+export function markThumbnailUrlFailed(url?: string | null): void {
+  if (!url) return;
+  if (failedThumbnailCache.size >= MAX_FAILED_CACHE_SIZE) {
+    const first = failedThumbnailCache.values().next().value;
+    if (first) failedThumbnailCache.delete(first);
+  }
+  failedThumbnailCache.add(url);
+}
+
+export function isThumbnailUrlFailed(url?: string | null): boolean {
+  if (!url) return false;
+  return failedThumbnailCache.has(url);
+}
+
 function normalizeThumbUrl(url?: string | null): string {
   if (!url || typeof url !== "string") return "";
   const trimmed = url.trim();
@@ -29,10 +58,20 @@ function normalizeThumbUrl(url?: string | null): string {
   return trimmed;
 }
 
-function extractYouTubeId(src?: string | null, videoId?: string | null): string | null {
+function isGoogleUserContentUrl(url: string): boolean {
+  return /(?:^https?:\/\/)?(?:[a-z0-9-]+\.)?(?:googleusercontent\.com|ggpht\.com)\//i.test(url);
+}
+
+export function extractYouTubeId(src?: string | null, videoId?: string | null): string | null {
   if (videoId && typeof videoId === "string") {
     const trimmedId = videoId.trim();
-    if (trimmedId.length === 11 && !trimmedId.startsWith("sc:")) {
+    if (
+      /^[a-zA-Z0-9_-]{11}$/.test(trimmedId) &&
+      !trimmedId.startsWith("LP_") &&
+      !trimmedId.startsWith("VL") &&
+      !trimmedId.startsWith("UC") &&
+      !trimmedId.startsWith("MP")
+    ) {
       return trimmedId;
     }
   }
@@ -47,31 +86,54 @@ export function buildThumbnailFallbacks(src?: string | null, videoId?: string | 
   const candidates: string[] = [];
   const pushUnique = (u?: string | null) => {
     const normalized = normalizeThumbUrl(u);
-    if (normalized && !candidates.includes(normalized)) {
+    if (normalized && !failedThumbnailCache.has(normalized) && !candidates.includes(normalized)) {
       candidates.push(normalized);
     }
   };
 
   const normalizedSrc = normalizeThumbUrl(src);
+  const trimmedRawId = typeof videoId === "string" ? videoId.trim() : "";
   const ytId = extractYouTubeId(normalizedSrc, videoId);
+  const lookupId = trimmedRawId || ytId;
 
-  if (normalizedSrc) {
-    pushUnique(normalizedSrc);
-    if (/\/maxresdefault(?:\.[a-z]+)?/i.test(normalizedSrc)) {
-      pushUnique(normalizedSrc.replace(/\/maxresdefault(?:\.[a-z]+)?/i, "/hqdefault.jpg"));
-      pushUnique(normalizedSrc.replace(/\/maxresdefault(?:\.[a-z]+)?/i, "/mqdefault.jpg"));
-    }
-    if (/\/sddefault(?:\.[a-z]+)?/i.test(normalizedSrc)) {
-      pushUnique(normalizedSrc.replace(/\/sddefault(?:\.[a-z]+)?/i, "/hqdefault.jpg"));
+  if (lookupId) {
+    const localCover = localCoverMap.get(lookupId);
+    if (localCover) {
+      pushUnique(localCover);
     }
   }
 
+  // Always prioritize static YouTube CDN (i.ytimg.com) over yt3/lh3.googleusercontent.com
+  // whenever a valid 11-character YouTube videoId exists to prevent HTTP 429 rate-limits.
   if (ytId) {
-    pushUnique(`https://i.ytimg.com/vi/${ytId}/hqdefault.jpg`);
     pushUnique(`https://i.ytimg.com/vi/${ytId}/mqdefault.jpg`);
+    pushUnique(`https://i.ytimg.com/vi/${ytId}/hqdefault.jpg`);
+    if (normalizedSrc && !isGoogleUserContentUrl(normalizedSrc)) {
+      pushUnique(normalizedSrc);
+    }
+    return candidates;
+  }
+
+  if (normalizedSrc) {
+    if (/\/maxresdefault(?:\.[a-z]+)?/i.test(normalizedSrc)) {
+      pushUnique(normalizedSrc.replace(/\/maxresdefault(?:\.[a-z]+)?/i, "/mqdefault.jpg"));
+      pushUnique(normalizedSrc.replace(/\/maxresdefault(?:\.[a-z]+)?/i, "/hqdefault.jpg"));
+    } else if (/\/sddefault(?:\.[a-z]+)?/i.test(normalizedSrc)) {
+      pushUnique(normalizedSrc.replace(/\/sddefault(?:\.[a-z]+)?/i, "/mqdefault.jpg"));
+      pushUnique(normalizedSrc.replace(/\/sddefault(?:\.[a-z]+)?/i, "/hqdefault.jpg"));
+    }
+    // Avoid spamming yt3.googleusercontent.com; allow non-yt3 URLs if no videoId is available
+    if (!/yt3\.googleusercontent\.com/i.test(normalizedSrc)) {
+      pushUnique(normalizedSrc);
+    }
   }
 
   return candidates;
+}
+
+export function getPreferredThumbnailUrl(src?: string | null, videoId?: string | null): string | null {
+  const list = buildThumbnailFallbacks(src, videoId);
+  return list[0] ?? null;
 }
 
 export const TrackThumbnail: React.FC<TrackThumbnailProps> = ({
@@ -90,15 +152,22 @@ export const TrackThumbnail: React.FC<TrackThumbnailProps> = ({
 
   useEffect(() => {
     setFallbackIdx(0);
-    setFailed(false);
-  }, [candidateKey]);
+    setFailed(candidates.length === 0);
+  }, [candidateKey, candidates.length]);
 
   const activeUrl = !failed && fallbackIdx < candidates.length ? candidates[fallbackIdx] : null;
 
   const advanceFallback = () => {
+    if (activeUrl) {
+      markThumbnailUrlFailed(activeUrl);
+    }
     setFallbackIdx((prev) => {
-      if (prev + 1 < candidates.length) {
-        return prev + 1;
+      let next = prev + 1;
+      while (next < candidates.length && isThumbnailUrlFailed(candidates[next])) {
+        next += 1;
+      }
+      if (next < candidates.length) {
+        return next;
       }
       setFailed(true);
       return prev;
@@ -126,6 +195,7 @@ export const TrackThumbnail: React.FC<TrackThumbnailProps> = ({
         aria-hidden="true"
         referrerPolicy="no-referrer"
         loading="lazy"
+        decoding="async"
         onError={advanceFallback}
         onLoad={handleLoad}
         className={imgClassName || className || "w-full h-full object-cover"}
@@ -150,6 +220,7 @@ export const TrackThumbnail: React.FC<TrackThumbnailProps> = ({
         alt={alt}
         referrerPolicy="no-referrer"
         loading="lazy"
+        decoding="async"
         onError={advanceFallback}
         onLoad={handleLoad}
         className={`w-full h-full object-cover ${imgClassName}`}

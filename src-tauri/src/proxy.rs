@@ -1,6 +1,6 @@
 use axum::{
     body::Body,
-    extract::{Query, State},
+    extract::{Path as AxumPath, Query, State},
     http::{header, HeaderMap, Method, StatusCode},
     response::Response,
     routing::any,
@@ -11,15 +11,34 @@ use futures_util::stream::StreamExt;
 use regex::Regex;
 use reqwest::Client;
 use serde::Deserialize;
+use std::path::PathBuf;
 use std::sync::{Arc, OnceLock};
+use tokio::io::{AsyncReadExt, AsyncSeekExt};
 use tokio::net::TcpListener;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, RwLock};
 use tokio::time::{sleep, Duration};
 use url::Url;
 
 const CHUNK_SIZE: u64 = 512 * 1024; // 512 KB
+const LOCAL_STREAM_CHUNK_SIZE: usize = 64 * 1024; // 64 KB
 const USER_AGENT_WEB: &str =
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:140.0) Gecko/20100101 Firefox/140.0";
+
+pub fn safe_track_stem(video_id: &str) -> Option<String> {
+    let trimmed = video_id.trim();
+    if trimmed.is_empty() || trimmed.contains("..") || trimmed.contains('/') || trimmed.contains('\\') {
+        return None;
+    }
+    let stem = trimmed.replace(':', "_");
+    if stem
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+    {
+        Some(stem)
+    } else {
+        None
+    }
+}
 
 pub fn with_rn_param(url_str: &str, rn: u64) -> String {
     static RN_RE: OnceLock<Regex> = OnceLock::new();
@@ -36,6 +55,7 @@ pub fn with_rn_param(url_str: &str, rn: u64) -> String {
 pub struct LocalStreamProxy {
     port: u16,
     client: Client,
+    downloads_dir: Arc<RwLock<PathBuf>>,
 }
 
 #[derive(Deserialize)]
@@ -52,7 +72,16 @@ struct UrlQuery {
 }
 
 impl LocalStreamProxy {
+    #[allow(dead_code)]
     pub async fn start(client: Client) -> Result<Self, String> {
+        let downloads_dir = Arc::new(RwLock::new(PathBuf::new()));
+        Self::start_with_downloads(client, downloads_dir).await
+    }
+
+    pub async fn start_with_downloads(
+        client: Client,
+        downloads_dir: Arc<RwLock<PathBuf>>,
+    ) -> Result<Self, String> {
         let listener = TcpListener::bind("127.0.0.1:0")
             .await
             .map_err(|e| format!("Failed to bind LocalStreamProxy: {e}"))?;
@@ -64,22 +93,50 @@ impl LocalStreamProxy {
         let state = Arc::new(ProxyState {
             port,
             client: client.clone(),
+            downloads_dir: downloads_dir.clone(),
         });
 
         let app = Router::new()
             .route("/stream", any(handle_stream))
             .route("/hls", any(handle_hls))
             .route("/raw", any(handle_raw))
+            .route("/local/{video_id}", any(handle_local_audio))
+            .route("/local-cover/{video_id}", any(handle_local_cover))
             .with_state(state);
 
         tokio::spawn(async move {
-            log::info!("[StreamProxy] Chunked audio proxy listening on http://127.0.0.1:{port}");
+            log::info!("[StreamProxy] Chunked & Local audio proxy listening on http://127.0.0.1:{port}");
             if let Err(err) = axum::serve(listener, app).await {
                 log::error!("[StreamProxy] Server error: {err}");
             }
         });
 
-        Ok(Self { port, client })
+        Ok(Self {
+            port,
+            client,
+            downloads_dir,
+        })
+    }
+
+    pub fn get_local_audio_url(&self, video_id: &str) -> String {
+        format!(
+            "http://127.0.0.1:{}/local/{}",
+            self.port,
+            urlencoding::encode(video_id)
+        )
+    }
+
+    pub fn get_local_cover_url(&self, video_id: &str) -> String {
+        format!(
+            "http://127.0.0.1:{}/local-cover/{}",
+            self.port,
+            urlencoding::encode(video_id)
+        )
+    }
+
+    #[allow(dead_code)]
+    pub fn downloads_dir(&self) -> &Arc<RwLock<PathBuf>> {
+        &self.downloads_dir
     }
 
     pub fn get_hls_proxy_url(&self, target_url: &str) -> String {
@@ -133,6 +190,7 @@ impl LocalStreamProxy {
 struct ProxyState {
     port: u16,
     client: Client,
+    downloads_dir: Arc<RwLock<PathBuf>>,
 }
 
 fn cors_builder(status: StatusCode) -> axum::http::response::Builder {
@@ -152,23 +210,48 @@ fn user_agent_for_client(client_name: &str) -> &'static str {
     if client_name == "VISIONOS" {
         "com.google.visionos.youtube/1.04(RealityDevice17,1; U; CPU visionOS 26_6_0 like Mac OS X; US)"
     } else if client_name.starts_with("ANDROID_VR") {
-        "com.google.android.apps.youtube.vr.oculus/1.61.48 (Linux; U; Android 12; Quest 2) gzip"
+        "com.google.android.apps.youtube.vr.oculus/1.61.48 (Linux; U; Android 12; en_US; Quest 3; Build/SQ3A.220605.009.A1; Cronet/132.0.6808.3)"
+    } else if client_name == "ANDROID" || client_name == "MOBILE" {
+        "com.google.android.youtube/21.26.364 (Linux; U; Android 11) gzip"
+    } else if client_name == "ANDROID_CREATOR" {
+        "com.google.android.apps.youtube.creator/25.03.101 (Linux; U; Android 15; en_US; Pixel 9 Pro Fold; Build/AP3A.241005.015.A2; Cronet/132.0.6779.0)"
+    } else if client_name == "IOS" || client_name == "IPADOS" {
+        "com.google.ios.youtube/21.03.3 (iPad7,6; U; CPU iPadOS 17_7_10 like Mac OS X; en-US)"
+    } else if client_name == "TVHTML5_SIMPLY_EMBEDDED_PLAYER" {
+        "Mozilla/5.0 (PlayStation; PlayStation 4/12.02) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.4 Safari/605.1.15"
+    } else if client_name == "TVHTML5" {
+        "Mozilla/5.0(SMART-TV; Linux; Tizen 4.0.0.2) AppleWebkit/605.1.15 (KHTML, like Gecko) SamsungBrowser/9.2 TV Safari/605.1.15"
     } else {
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:140.0) Gecko/20100101 Firefox/140.0"
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
     }
 }
 
-async fn probe_metadata(client: &Client, url: &str, user_agent: &str) -> Result<(u64, String), String> {
+fn origin_referer_for_client(client_name: &str) -> Option<(&'static str, &'static str)> {
+    match client_name {
+        "VISIONOS" | "ANDROID_VR" | "ANDROID_CREATOR" | "ANDROID" | "MOBILE" | "IOS" | "IPADOS" => None,
+        "WEB_REMIX" => Some(("https://music.youtube.com", "https://music.youtube.com/")),
+        "WEB_CREATOR" => Some(("https://studio.youtube.com", "https://studio.youtube.com/")),
+        _ => Some(("https://www.youtube.com", "https://www.youtube.com/")),
+    }
+}
+
+async fn probe_metadata(
+    client: &Client,
+    url: &str,
+    user_agent: &str,
+    client_name: &str,
+) -> Result<(u64, String), String> {
     let probe_url = with_rn_param(url, 0);
-    let res = client
+    let mut req = client
         .get(&probe_url)
         .header(header::USER_AGENT, user_agent)
         .header(header::RANGE, "bytes=0-1")
         .header(header::ACCEPT, "*/*")
-        .header(header::ACCEPT_ENCODING, "identity")
-        .send()
-        .await
-        .map_err(|e| e.to_string())?;
+        .header(header::ACCEPT_ENCODING, "identity");
+    if let Some((origin, referer)) = origin_referer_for_client(client_name) {
+        req = req.header(header::ORIGIN, origin).header(header::REFERER, referer);
+    }
+    let res = req.send().await.map_err(|e| e.to_string())?;
 
     let content_type = res
         .headers()
@@ -208,17 +291,19 @@ async fn fetch_single_chunk(
     chunk_url: &str,
     chunk_range: &str,
     user_agent: &str,
+    client_name: &str,
 ) -> Result<Bytes, String> {
-    let res = client
+    let mut req = client
         .get(chunk_url)
         .header(header::USER_AGENT, user_agent)
         .header(header::RANGE, chunk_range)
         .header(header::ACCEPT, "*/*")
         .header(header::ACCEPT_ENCODING, "identity")
-        .header(header::CONNECTION, "keep-alive")
-        .send()
-        .await
-        .map_err(|e| e.to_string())?;
+        .header(header::CONNECTION, "keep-alive");
+    if let Some((origin, referer)) = origin_referer_for_client(client_name) {
+        req = req.header(header::ORIGIN, origin).header(header::REFERER, referer);
+    }
+    let res = req.send().await.map_err(|e| e.to_string())?;
 
     let status = res.status().as_u16();
     if status != 200 && status != 206 {
@@ -290,7 +375,7 @@ async fn handle_stream(
     }
 
     if total_length == 0 {
-        match probe_metadata(&state.client, &target_url, user_agent).await {
+        match probe_metadata(&state.client, &target_url, user_agent, &client_name).await {
             Ok((len, probed_ct)) => {
                 total_length = len;
                 if raw_mime.is_none() {
@@ -380,7 +465,7 @@ async fn handle_stream(
                 if tx.is_closed() {
                     break;
                 }
-                match fetch_single_chunk(&client, &chunk_url, &chunk_range, user_agent).await {
+                match fetch_single_chunk(&client, &chunk_url, &chunk_range, user_agent, &client_name).await {
                     Ok(b) => {
                         chunk_bytes = Some(b);
                         break;
@@ -658,4 +743,222 @@ async fn handle_raw(
         .map(|item| item.map_err(std::io::Error::other));
 
     builder.body(Body::from_stream(byte_stream)).unwrap()
+}
+
+fn find_local_audio_file(dir: &std::path::Path, stem: &str) -> Option<(PathBuf, &'static str)> {
+    const AUDIO_CANDIDATES: [(&str, &str); 7] = [
+        ("m4a", "audio/mp4"),
+        ("webm", "audio/webm"),
+        ("opus", "audio/ogg"),
+        ("mp3", "audio/mpeg"),
+        ("mp4", "audio/mp4"),
+        ("aac", "audio/aac"),
+        ("ogg", "audio/ogg"),
+    ];
+    for (ext, mime) in AUDIO_CANDIDATES {
+        let p = dir.join(format!("{stem}.{ext}"));
+        if p.is_file() {
+            return Some((p, mime));
+        }
+    }
+    None
+}
+
+async fn handle_local_audio(
+    method: Method,
+    headers: HeaderMap,
+    AxumPath(raw_video_id): AxumPath<String>,
+    State(state): State<Arc<ProxyState>>,
+) -> Response {
+    if method == Method::OPTIONS {
+        return cors_builder(StatusCode::NO_CONTENT)
+            .body(Body::empty())
+            .unwrap();
+    }
+
+    let decoded = urlencoding::decode(&raw_video_id)
+        .map(|s| s.into_owned())
+        .unwrap_or(raw_video_id);
+    let Some(stem) = safe_track_stem(&decoded) else {
+        return cors_builder(StatusCode::BAD_REQUEST)
+            .body(Body::from("Invalid track id"))
+            .unwrap();
+    };
+
+    let dir = state.downloads_dir.read().await.clone();
+    let Some((file_path, content_type)) = find_local_audio_file(&dir, &stem) else {
+        return cors_builder(StatusCode::NOT_FOUND)
+            .body(Body::from("Local track not found"))
+            .unwrap();
+    };
+
+    let Ok(meta) = tokio::fs::metadata(&file_path).await else {
+        return cors_builder(StatusCode::NOT_FOUND)
+            .body(Body::from("Local track unavailable"))
+            .unwrap();
+    };
+    let file_len = meta.len();
+
+    if method == Method::HEAD {
+        return cors_builder(StatusCode::OK)
+            .header(header::CONTENT_TYPE, content_type)
+            .header(header::CONTENT_LENGTH, file_len.to_string())
+            .body(Body::empty())
+            .unwrap();
+    }
+
+    if file_len == 0 {
+        return cors_builder(StatusCode::RANGE_NOT_SATISFIABLE)
+            .header(header::CONTENT_RANGE, "bytes */0")
+            .body(Body::empty())
+            .unwrap();
+    }
+
+    let range_header = headers
+        .get(header::RANGE)
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.to_string());
+
+    let mut start_byte: u64 = 0;
+    let mut end_byte: u64 = file_len - 1;
+    let mut is_ranged = false;
+
+    if let Some(ref rh) = range_header {
+        static LOCAL_RANGE_RE: OnceLock<Regex> = OnceLock::new();
+        let re = LOCAL_RANGE_RE.get_or_init(|| Regex::new(r"bytes=(\d+)-(\d+)?").unwrap());
+        if let Some(caps) = re.captures(rh) {
+            is_ranged = true;
+            if let Ok(s) = caps[1].parse::<u64>() {
+                start_byte = s;
+            }
+            if let Some(m2) = caps.get(2) {
+                if let Ok(e) = m2.as_str().parse::<u64>() {
+                    end_byte = e;
+                }
+            }
+        }
+    }
+
+    if end_byte >= file_len {
+        end_byte = file_len - 1;
+    }
+
+    if start_byte > end_byte {
+        return cors_builder(StatusCode::RANGE_NOT_SATISFIABLE)
+            .header(header::CONTENT_RANGE, format!("bytes */{file_len}"))
+            .header(header::CONTENT_TYPE, content_type)
+            .body(Body::empty())
+            .unwrap();
+    }
+
+    let requested_length = end_byte - start_byte + 1;
+    let mut file = match tokio::fs::File::open(&file_path).await {
+        Ok(f) => f,
+        Err(err) => {
+            return cors_builder(StatusCode::INTERNAL_SERVER_ERROR)
+                .body(Body::from(format!("Failed to open file: {err}")))
+                .unwrap();
+        }
+    };
+
+    if start_byte > 0 {
+        if let Err(err) = file.seek(std::io::SeekFrom::Start(start_byte)).await {
+            return cors_builder(StatusCode::INTERNAL_SERVER_ERROR)
+                .body(Body::from(format!("Seek failed: {err}")))
+                .unwrap();
+        }
+    }
+
+    let (tx, rx) = mpsc::channel::<Result<Bytes, std::io::Error>>(4);
+    tokio::spawn(async move {
+        let mut reader = file.take(requested_length);
+        let mut buf = vec![0u8; LOCAL_STREAM_CHUNK_SIZE];
+        loop {
+            if tx.is_closed() {
+                break;
+            }
+            match reader.read(&mut buf).await {
+                Ok(0) => break,
+                Ok(n) => {
+                    if tx.send(Ok(Bytes::copy_from_slice(&buf[..n]))).await.is_err() {
+                        break;
+                    }
+                }
+                Err(err) => {
+                    let _ = tx.send(Err(err)).await;
+                    break;
+                }
+            }
+        }
+    });
+
+    let status = if is_ranged {
+        StatusCode::PARTIAL_CONTENT
+    } else {
+        StatusCode::OK
+    };
+
+    let mut builder = cors_builder(status)
+        .header(header::CONTENT_TYPE, content_type)
+        .header(header::CONTENT_LENGTH, requested_length.to_string())
+        .header(header::CACHE_CONTROL, "public, max-age=3600");
+
+    if is_ranged {
+        builder = builder.header(
+            header::CONTENT_RANGE,
+            format!("bytes {start_byte}-{end_byte}/{file_len}"),
+        );
+    }
+
+    builder
+        .body(Body::from_stream(tokio_stream_from_mpsc(rx)))
+        .unwrap()
+}
+
+async fn handle_local_cover(
+    method: Method,
+    AxumPath(raw_video_id): AxumPath<String>,
+    State(state): State<Arc<ProxyState>>,
+) -> Response {
+    if method == Method::OPTIONS {
+        return cors_builder(StatusCode::NO_CONTENT)
+            .body(Body::empty())
+            .unwrap();
+    }
+
+    let decoded = urlencoding::decode(&raw_video_id)
+        .map(|s| s.into_owned())
+        .unwrap_or(raw_video_id);
+    let Some(stem) = safe_track_stem(&decoded) else {
+        return cors_builder(StatusCode::BAD_REQUEST)
+            .body(Body::from("Invalid track id"))
+            .unwrap();
+    };
+
+    let dir = state.downloads_dir.read().await.clone();
+    const COVER_EXTS: [(&str, &str); 3] = [
+        ("jpg", "image/jpeg"),
+        ("png", "image/png"),
+        ("webp", "image/webp"),
+    ];
+    for (ext, mime) in COVER_EXTS {
+        let p = dir.join(format!("{stem}.{ext}"));
+        if p.is_file() {
+            match tokio::fs::read(&p).await {
+                Ok(bytes) => {
+                    return cors_builder(StatusCode::OK)
+                        .header(header::CONTENT_TYPE, mime)
+                        .header(header::CONTENT_LENGTH, bytes.len().to_string())
+                        .header(header::CACHE_CONTROL, "public, max-age=86400")
+                        .body(Body::from(bytes))
+                        .unwrap();
+                }
+                Err(_) => break,
+            }
+        }
+    }
+
+    cors_builder(StatusCode::NOT_FOUND)
+        .body(Body::from("Local cover not found"))
+        .unwrap()
 }

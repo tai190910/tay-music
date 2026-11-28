@@ -280,3 +280,84 @@ pub struct CandidateResult {
     pub song: SongItem,
     pub score: f64,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct YouTubeAccountInfo {
+    pub logged_in: bool,
+    #[serde(default)]
+    pub account_name: Option<String>,
+    #[serde(default)]
+    pub email: Option<String>,
+    #[serde(default)]
+    pub channel_handle: Option<String>,
+    #[serde(default)]
+    pub photo_url: Option<String>,
+    #[serde(default)]
+    pub visitor_data: Option<String>,
+    #[serde(default)]
+    pub data_sync_id: Option<String>,
+    #[serde(default)]
+    pub auth_user: Option<String>,
+    #[serde(default)]
+    pub user_agent: Option<String>,
+    pub updated_at: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DiscordRpcStatus {
+    pub connected: bool,
+    pub configured: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DownloadedTrack {
+    pub video_id: String,
+    pub title: String,
+    pub artist: String,
+    #[serde(default)]
+    pub duration: Option<i64>,
+    pub file_name: String,
+    pub mime_type: String,
+    #[serde(default)]
+    pub cover_file: Option<String>,
+    #[serde(default)]
+    pub lyrics_file: Option<String>,
+    pub file_size: u64,
+    pub downloaded_at: i64,
+    pub local_stream_url: String,
+    #[serde(default)]
+    pub local_cover_url: Option<String>,
+    #[serde(default)]
+    pub source_thumbnail: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DownloadProgressEvent {
+    pub video_id: String,
+    pub percent: u8,
+    pub status: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StorageInfo {
+    pub downloads_dir: String,
+    pub total_bytes: u64,
+    pub track_count: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BackupImportResult {
+    pub songs_restored: usize,
+    pub liked_restored: usize,
+    pub playlists_restored: usize,
+    #[serde(default)]
+    pub frontend_settings: Option<Value>,
+}

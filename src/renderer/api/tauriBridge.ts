@@ -2,7 +2,7 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { isValidTrackId, type MochyApi } from "../types.ts";
+import { isValidTrackId, type DiscordPresencePayload, type MochyApi } from "../types.ts";
 
 export const tauriMochyApi: MochyApi = {
   // YouTube API
@@ -21,8 +21,8 @@ export const tauriMochyApi: MochyApi = {
     }
     return invoke("youtube_get_stream", { videoId, quality });
   },
-  getLyrics: (title: string, artist?: string, duration?: number, videoId?: string) =>
-    invoke("youtube_get_lyrics", { title, artist, duration, videoId }),
+  getLyrics: (title: string, artist?: string, duration?: number, videoId?: string, offlineOnly?: boolean) =>
+    invoke("youtube_get_lyrics", { title, artist, duration, videoId, offlineOnly }),
   getYouTubePlaylist: (playlistId: string) => invoke("youtube_get_playlist", { playlistId }),
 
   // Database API - Song & Liked
@@ -99,6 +99,115 @@ export const tauriMochyApi: MochyApi = {
       }
     };
   },
+
+  // YouTube Auth (Anti-Bot WebView2 Cookie Session)
+  youtubeOpenLogin: () => invoke("youtube_open_login"),
+  youtubeGetAccount: () => invoke("youtube_get_account"),
+  youtubeLogout: () => invoke("youtube_logout"),
+  onYouTubeAuthChanged: (callback) => {
+    let unlisten: (() => void) | null = null;
+    let disposed = false;
+
+    listen("youtube:authChanged", (event) => {
+      callback((event.payload as any) ?? null);
+    }).then((fn) => {
+      if (disposed) {
+        fn();
+      } else {
+        unlisten = fn;
+      }
+    });
+
+    return () => {
+      disposed = true;
+      if (unlisten) {
+        unlisten();
+      }
+    };
+  },
+
+  // Discord Rich Presence (Local IPC)
+  updateDiscordPresence: (payload: DiscordPresencePayload) =>
+    invoke("update_discord_presence", {
+      title: payload.title,
+      artist: payload.artist,
+      thumbnailUrl: payload.thumbnailUrl ?? null,
+      durationSecs: payload.durationSecs ?? null,
+      currentTimeSecs: payload.currentTimeSecs ?? null,
+      isPlaying: payload.isPlaying,
+      videoId: payload.videoId ?? null,
+    }),
+  clearDiscordPresence: () => invoke("clear_discord_presence"),
+  getDiscordRpcStatus: () => invoke("get_discord_rpc_status"),
+  onDiscordStatusChanged: (callback) => {
+    let unlisten: (() => void) | null = null;
+    let disposed = false;
+
+    listen("discord:statusChanged", (event) => {
+      if (event.payload) {
+        callback(event.payload as any);
+      }
+    }).then((fn) => {
+      if (disposed) {
+        fn();
+      } else {
+        unlisten = fn;
+      }
+    });
+
+    return () => {
+      disposed = true;
+      if (unlisten) {
+        unlisten();
+      }
+    };
+  },
+
+  // Offline Downloader, Local Stream, Storage & Backup/Restore
+  downloadTrack: (params) =>
+    invoke("download_track", {
+      videoId: params.videoId,
+      title: params.title,
+      artist: params.artist,
+      thumbnailUrl: params.thumbnailUrl ?? null,
+      duration: params.duration ?? null,
+      lyricsLrc: params.lyricsLrc ?? null,
+      quality: params.quality ?? "HIGH",
+    }),
+  cancelDownload: (videoId: string) => invoke("cancel_download", { videoId }),
+  deleteDownloadedTrack: (videoId: string) => invoke("delete_downloaded_track", { videoId }),
+  getDownloadedTracks: () => invoke("get_downloaded_tracks"),
+  getLocalPlayback: (videoId: string) => invoke("get_local_playback", { videoId }),
+  onDownloadProgress: (callback) => {
+    let unlisten: (() => void) | null = null;
+    let disposed = false;
+
+    listen("download-progress", (event) => {
+      if (event.payload) {
+        callback(event.payload as any);
+      }
+    }).then((fn) => {
+      if (disposed) {
+        fn();
+      } else {
+        unlisten = fn;
+      }
+    });
+
+    return () => {
+      disposed = true;
+      if (unlisten) {
+        unlisten();
+      }
+    };
+  },
+  getStorageInfo: () => invoke("get_storage_info"),
+  pickDownloadsFolder: () => invoke("pick_downloads_folder"),
+  changeDownloadsDir: (newDir: string, migrateExisting: boolean) =>
+    invoke("change_downloads_dir", { newDir, migrateExisting }),
+  exportUserDataBackup: (frontendSettings?: Record<string, any> | null) =>
+    invoke("export_user_data_backup", { frontendSettings: frontendSettings ?? null }),
+  importUserDataBackup: () => invoke("import_user_data_backup"),
 };
 
 export function initMochyApiBridge(): void {

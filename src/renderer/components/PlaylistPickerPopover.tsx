@@ -11,7 +11,7 @@ import React, {
 import { createPortal } from "react-dom";
 import { Check, Loader2, Plus, X } from "lucide-react";
 import type { Playlist, Song } from "../types.ts";
-import { TrackThumbnail } from "./TrackThumbnail.tsx";
+import { TrackThumbnail, getPreferredThumbnailUrl } from "./TrackThumbnail.tsx";
 
 interface PlaylistPickerContextValue {
   openPlaylistPicker: (song: Song, anchorRect: DOMRect) => void;
@@ -245,7 +245,7 @@ export const PlaylistPickerProvider: React.FC<PlaylistPickerProviderProps> = ({
       const created = await window.mochyApi.createPlaylist(
         trimmed,
         "",
-        song.thumbnail || undefined
+        getPreferredThumbnailUrl(song.thumbnail, song.videoId || song.id) || undefined
       );
       await window.mochyApi.addSongToPlaylist(created.id, song.id, song);
       setPlaylists((prev) => [{ ...created, songCount: 1 }, ...prev]);

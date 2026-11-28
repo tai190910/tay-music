@@ -1,20 +1,26 @@
+use crate::downloader::DownloadManager;
 use crate::innertube::{InnerTube, YTPlayerUtils, YouTube};
-use crate::lyrics::LyricsHelper;
+use crate::lyrics::{LyricsHelper, LyricsUtils};
 use crate::models::{
-    AutoSyncSettings, CandidateResult, DbHistoryEvent, DbLyricsCache, DbPlaylist, DbSong,
-    ImportResult, LyricsResult, ParsedImport, PlaybackData, PlaylistPageResult,
-    SongItem, SpotifyAccountInfo, SpotifyRemotePlaylist, TrackCandidateQuery,
+    AutoSyncSettings, BackupImportResult, CandidateResult, DbHistoryEvent, DbLyricsCache,
+    DbPlaylist, DbSong, DiscordRpcStatus, DownloadedTrack, ImportResult, LyricsResult,
+    ParsedImport, PlaybackData, PlaylistPageResult, SongItem, SpotifyAccountInfo,
+    SpotifyRemotePlaylist, StorageInfo, TrackCandidateQuery, YouTubeAccountInfo,
 };
+use crate::discord_rpc::{DiscordRpcManager, PresenceSnapshot};
 use crate::proxy::LocalStreamProxy;
 use crate::soundcloud;
 use crate::spotify_webview;
+use crate::youtube_webview;
 use crate::importer::{MusicImportService, SpotifyClient, TrackMatcher};
 use crate::db::MochyDatabase;
 use reqwest::Client;
 use serde_json::{json, Value};
 use std::collections::HashSet;
+use std::path::PathBuf;
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter, State};
+use tauri_plugin_dialog::DialogExt;
 
 pub struct AppState {
     pub db: Arc<MochyDatabase>,
@@ -22,6 +28,8 @@ pub struct AppState {
     pub http_client: Client,
     pub stream_proxy: LocalStreamProxy,
     pub importer: Arc<MusicImportService>,
+    pub discord_rpc: Arc<DiscordRpcManager>,
+    pub downloader: Arc<DownloadManager>,
 }
 
 #[tauri::command]
@@ -94,22 +102,54 @@ pub async fn youtube_search_songs(
 
     let query_wants_instrumental = TrackMatcher::has_instrumental_intent(trimmed);
     let query_norm = TrackMatcher::normalize_text(trimmed);
-
-    let (ytm_res, ytv_res) = tokio::join!(
-        YouTube::search_songs(&state.inner_tube, trimmed),
-        YouTube::search_youtube_videos(&state.inner_tube, trimmed)
-    );
-
-    let mut ytm_songs = ytm_res.unwrap_or_else(|err| {
-        log::error!("[IPC] youtube_search_songs (YTM) error: {err}");
-        vec![]
-    });
-    let ytv_raw = ytv_res.unwrap_or_else(|err| {
-        log::warn!("[IPC] youtube_search_songs (YT Video) error: {err}");
-        vec![]
-    });
-
     let q_lower = trimmed.to_lowercase();
+
+    let is_remix_or_cover_query = [
+        "remix",
+        "dj",
+        "cover",
+        "slowed",
+        "sped up",
+        "speed up",
+        "nightcore",
+        "bootleg",
+        "mashup",
+        "vinahouse",
+        "vip",
+        "tiktok",
+        "douyin",
+        "版",
+        "慢摇",
+        "翻唱",
+        "电音",
+    ]
+    .iter()
+    .any(|kw| q_lower.contains(kw) || trimmed.contains(kw));
+
+    let mut ytm_err_msg: Option<String> = None;
+    let mut ytm_songs = match YouTube::search_songs(&state.inner_tube, trimmed).await {
+        Ok(songs) => songs,
+        Err(err) => {
+            log::error!("[IPC] youtube_search_songs (YTM) error: {err}");
+            ytm_err_msg = Some(err);
+            vec![]
+        }
+    };
+
+    // Only issue secondary YouTube Web video search when query asks for remix/cover or YTM returned few items
+    let need_ytv = is_remix_or_cover_query || ytm_songs.len() < 6;
+    let ytv_raw = if need_ytv {
+        match YouTube::search_youtube_videos(&state.inner_tube, trimmed).await {
+            Ok(vids) => vids,
+            Err(err) => {
+                log::warn!("[IPC] youtube_search_songs (YT Video) error: {err}");
+                vec![]
+            }
+        }
+    } else {
+        vec![]
+    };
+
     let allow_long = q_lower.contains("mix")
         || q_lower.contains("nonstop")
         || q_lower.contains("hour")
@@ -138,28 +178,6 @@ pub async fn youtube_search_songs(
         ytv_filtered.retain(|s| !TrackMatcher::is_instrumental_candidate(s, ""));
         rank_vocal_priority(&query_norm, &mut ytv_filtered);
     }
-
-    let is_remix_or_cover_query = [
-        "remix",
-        "dj",
-        "cover",
-        "slowed",
-        "sped up",
-        "speed up",
-        "nightcore",
-        "bootleg",
-        "mashup",
-        "vinahouse",
-        "vip",
-        "tiktok",
-        "douyin",
-        "版",
-        "慢摇",
-        "翻唱",
-        "电音",
-    ]
-    .iter()
-    .any(|kw| q_lower.contains(kw) || trimmed.contains(kw));
 
     let mut merged = Vec::new();
     let mut seen = HashSet::new();
@@ -222,6 +240,14 @@ pub async fn youtube_search_songs(
         }
     }
 
+    if merged.is_empty() {
+        if let Some(err) = ytm_err_msg {
+            if err.contains("429") || err.contains("LOGIN_REQUIRED") {
+                return Err(err);
+            }
+        }
+    }
+
     Ok(merged)
 }
 
@@ -264,15 +290,54 @@ pub async fn youtube_get_lyrics(
     artist: Option<String>,
     duration: Option<f64>,
     video_id: Option<String>,
+    offline_only: Option<bool>,
 ) -> Result<Option<LyricsResult>, String> {
-    Ok(LyricsHelper::get_lyrics(
+    let trimmed_vid = video_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
+
+    if let Some(trimmed) = trimmed_vid {
+        if let Some(local_lrc) = state.downloader.read_local_lyrics(trimmed).await {
+            let parsed = LyricsUtils::parse_lyrics(&local_lrc);
+            return Ok(Some(LyricsResult {
+                provider: "Local (.lrc)".to_string(),
+                lyrics: local_lrc,
+                parsed,
+            }));
+        }
+        if let Ok(Some(cached)) = state.db.get_cached_lyrics(trimmed) {
+            if !cached.lyrics.trim().is_empty() {
+                let parsed = LyricsUtils::parse_lyrics(&cached.lyrics);
+                return Ok(Some(LyricsResult {
+                    provider: cached.provider,
+                    lyrics: cached.lyrics,
+                    parsed,
+                }));
+            }
+        }
+    }
+
+    if offline_only.unwrap_or(false) {
+        return Ok(None);
+    }
+
+    let fetched = LyricsHelper::get_lyrics(
         &state.http_client,
         &title,
         artist.as_deref().unwrap_or(""),
         duration,
         video_id.as_deref(),
     )
-    .await)
+    .await;
+
+    if let (Some(trimmed), Some(ref res)) = (trimmed_vid, &fetched) {
+        if !res.lyrics.trim().is_empty() {
+            let _ = state.db.cache_lyrics(trimmed, &res.lyrics, &res.provider);
+        }
+    }
+
+    Ok(fetched)
 }
 
 #[tauri::command]
@@ -584,4 +649,232 @@ pub fn spotify_set_auto_sync(
         state.db.set_setting("spotify_sync_playlists", &json_ids)?;
     }
     Ok(true)
+}
+
+// ==================== YOUTUBE AUTH COMMANDS ====================
+
+#[tauri::command]
+pub async fn youtube_open_login(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<Option<YouTubeAccountInfo>, String> {
+    let res = youtube_webview::open_login(&app, &state.inner_tube, &state.db).await?;
+    if let Some(ref info) = res {
+        let _ = app.emit("youtube:authChanged", info);
+    }
+    Ok(res)
+}
+
+#[tauri::command]
+pub fn youtube_get_account(
+    state: State<'_, AppState>,
+) -> Result<Option<YouTubeAccountInfo>, String> {
+    youtube_webview::get_saved_account(&state.db)
+}
+
+#[tauri::command]
+pub async fn youtube_logout(app: AppHandle, state: State<'_, AppState>) -> Result<bool, String> {
+    let ok = youtube_webview::logout(&app, &state.inner_tube, &state.db).await?;
+    let _ = app.emit("youtube:authChanged", serde_json::Value::Null);
+    Ok(ok)
+}
+
+// ==================== DISCORD RICH PRESENCE COMMANDS ====================
+
+#[tauri::command]
+pub async fn update_discord_presence(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    title: String,
+    artist: String,
+    thumbnail_url: Option<String>,
+    duration_secs: Option<f64>,
+    current_time_secs: Option<f64>,
+    is_playing: bool,
+    video_id: Option<String>,
+) -> Result<DiscordRpcStatus, String> {
+    let snap = PresenceSnapshot {
+        title,
+        artist,
+        thumbnail_url,
+        duration_secs,
+        current_time_secs,
+        is_playing,
+        video_id,
+        recorded_at: std::time::Instant::now(),
+    };
+    Ok(state.discord_rpc.update_presence(&app, snap).await)
+}
+
+#[tauri::command]
+pub async fn clear_discord_presence(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<DiscordRpcStatus, String> {
+    Ok(state.discord_rpc.clear_presence(&app, true).await)
+}
+
+#[tauri::command]
+pub async fn get_discord_rpc_status(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<DiscordRpcStatus, String> {
+    Ok(state.discord_rpc.probe_status(&app).await)
+}
+
+// ==================== OFFLINE DOWNLOADER & STORAGE COMMANDS ====================
+
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+pub async fn download_track(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    video_id: String,
+    title: String,
+    artist: String,
+    thumbnail_url: Option<String>,
+    duration: Option<i64>,
+    lyrics_lrc: Option<String>,
+    quality: Option<String>,
+) -> Result<Option<DownloadedTrack>, String> {
+    state
+        .downloader
+        .download_track(
+            &app,
+            &state.db,
+            &state.inner_tube,
+            &state.http_client,
+            &state.stream_proxy,
+            video_id,
+            title,
+            artist,
+            thumbnail_url,
+            duration,
+            lyrics_lrc,
+            quality,
+        )
+        .await
+}
+
+#[tauri::command]
+pub async fn cancel_download(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    video_id: String,
+) -> Result<bool, String> {
+    Ok(state.downloader.cancel_download(&app, &video_id).await)
+}
+
+#[tauri::command]
+pub async fn delete_downloaded_track(
+    state: State<'_, AppState>,
+    video_id: String,
+) -> Result<bool, String> {
+    state.downloader.delete_downloaded_track(&video_id).await
+}
+
+#[tauri::command]
+pub async fn get_downloaded_tracks(
+    state: State<'_, AppState>,
+) -> Result<Vec<DownloadedTrack>, String> {
+    Ok(state
+        .downloader
+        .get_downloaded_tracks(&state.stream_proxy)
+        .await)
+}
+
+#[tauri::command]
+pub async fn get_local_playback(
+    state: State<'_, AppState>,
+    video_id: String,
+) -> Result<Option<PlaybackData>, String> {
+    Ok(state
+        .downloader
+        .get_local_playback(&state.stream_proxy, &video_id)
+        .await)
+}
+
+#[tauri::command]
+pub async fn get_storage_info(state: State<'_, AppState>) -> Result<StorageInfo, String> {
+    Ok(state.downloader.get_storage_info().await)
+}
+
+#[tauri::command]
+pub async fn pick_downloads_folder(app: AppHandle) -> Result<Option<String>, String> {
+    let (tx, rx) = tokio::sync::oneshot::channel::<Option<PathBuf>>();
+    app.dialog()
+        .file()
+        .set_title("Chọn thư mục lưu nhạc tải về")
+        .pick_folder(move |folder_opt| {
+            let p = folder_opt.and_then(|fp| fp.into_path().ok());
+            let _ = tx.send(p);
+        });
+    let picked = rx.await.map_err(|e| e.to_string())?;
+    Ok(picked.map(|p| p.to_string_lossy().to_string()))
+}
+
+#[tauri::command]
+pub async fn change_downloads_dir(
+    state: State<'_, AppState>,
+    new_dir: String,
+    migrate_existing: bool,
+) -> Result<StorageInfo, String> {
+    let path = PathBuf::from(new_dir.trim());
+    state
+        .downloader
+        .change_downloads_dir(&state.db, path, migrate_existing)
+        .await
+}
+
+#[tauri::command]
+pub async fn export_user_data_backup(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    frontend_settings: Option<Value>,
+) -> Result<Option<String>, String> {
+    let backup = state.db.export_backup_json(frontend_settings)?;
+    let (tx, rx) = tokio::sync::oneshot::channel::<Option<PathBuf>>();
+    app.dialog()
+        .file()
+        .set_title("Xuất bản sao lưu dữ liệu Tày Music")
+        .set_file_name("tay-music-backup.json")
+        .add_filter("JSON Backup", &["json"])
+        .save_file(move |file_opt| {
+            let p = file_opt.and_then(|fp| fp.into_path().ok());
+            let _ = tx.send(p);
+        });
+    let Some(dest_path) = rx.await.map_err(|e| e.to_string())? else {
+        return Ok(None);
+    };
+    let json_text = serde_json::to_string_pretty(&backup).map_err(|e| e.to_string())?;
+    tokio::fs::write(&dest_path, json_text.as_bytes())
+        .await
+        .map_err(|e| format!("Không thể lưu file sao lưu: {e}"))?;
+    Ok(Some(dest_path.to_string_lossy().to_string()))
+}
+
+#[tauri::command]
+pub async fn import_user_data_backup(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<Option<BackupImportResult>, String> {
+    let (tx, rx) = tokio::sync::oneshot::channel::<Option<PathBuf>>();
+    app.dialog()
+        .file()
+        .set_title("Chọn file sao lưu dữ liệu Tày Music (.json)")
+        .add_filter("JSON Backup", &["json"])
+        .pick_file(move |file_opt| {
+            let p = file_opt.and_then(|fp| fp.into_path().ok());
+            let _ = tx.send(p);
+        });
+    let Some(src_path) = rx.await.map_err(|e| e.to_string())? else {
+        return Ok(None);
+    };
+    let raw = tokio::fs::read_to_string(&src_path)
+        .await
+        .map_err(|e| format!("Không thể đọc file sao lưu: {e}"))?;
+    let val: Value = serde_json::from_str(&raw)
+        .map_err(|_| "File đã chọn không phải định dạng JSON hợp lệ.".to_string())?;
+    let res = state.db.import_backup_json(&val)?;
+    Ok(Some(res))
 }

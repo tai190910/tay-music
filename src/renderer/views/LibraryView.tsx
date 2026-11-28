@@ -12,13 +12,14 @@ import {
   Search,
   X,
   ChevronRight,
+  ArrowDownToLine,
 } from "lucide-react";
 import { isValidTrackId, type Song, type Playlist, type HistoryItem } from "../types.ts";
 import { SongRow } from "../components/SongRow.tsx";
 import { TrackThumbnail } from "../components/TrackThumbnail.tsx";
 import { usePlayer } from "../context/PlayerContext.tsx";
 
-export type LibraryTab = "all" | "songs" | "playlists" | "liked" | "history";
+export type LibraryTab = "all" | "songs" | "playlists" | "liked" | "downloaded" | "history";
 
 interface LibraryViewProps {
   onAddToPlaylist: (song: Song) => void;
@@ -43,7 +44,7 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
   onActiveTabChange,
   sidebarExpanded = false,
 }) => {
-  const { playSong, lastSwitchedVersion } = usePlayer();
+  const { playSong, lastSwitchedVersion, downloadedMap } = usePlayer();
   const [activeTab, setActiveTab] = useState<LibraryTab>(initialTab);
   const [likedSongs, setLikedSongs] = useState<Song[]>([]);
   const [historyItems, setHistoryItems] = useState<HistoryItem[]>([]);
@@ -135,7 +136,29 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
     return song.title.toLowerCase().includes(filterTerm) || artistsStr.includes(filterTerm);
   };
 
+  const downloadedSongs = useMemo<Song[]>(() => {
+    return Object.values(downloadedMap)
+      .sort((a, b) => b.downloadedAt - a.downloadedAt)
+      .map((d) => ({
+        id: d.videoId,
+        videoId: d.videoId,
+        title: d.title,
+        artists: [{ name: d.artist || "Nghệ sĩ chưa rõ", id: null }],
+        duration: d.duration ?? null,
+        thumbnail: d.localCoverUrl || d.sourceThumbnail || null,
+      }));
+  }, [downloadedMap]);
+
+  const totalDownloadedMb = useMemo(() => {
+    const bytes = Object.values(downloadedMap).reduce((sum, d) => sum + (d.fileSize || 0), 0);
+    return (bytes / (1024 * 1024)).toFixed(1);
+  }, [downloadedMap]);
+
   const filteredLiked = useMemo(() => likedSongs.filter(matchesSong), [likedSongs, filterTerm]);
+  const filteredDownloaded = useMemo(
+    () => downloadedSongs.filter(matchesSong),
+    [downloadedSongs, filterTerm]
+  );
   const filteredAllSongs = useMemo(
     () => allLibrarySongs.filter(matchesSong),
     [allLibrarySongs, filterTerm]
@@ -165,6 +188,7 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
     { id: "songs", label: "Bài hát" },
     { id: "playlists", label: "Playlists" },
     { id: "liked", label: "Đã thích" },
+    { id: "downloaded", label: `Đã tải xuống (Offline${downloadedSongs.length > 0 ? ` • ${downloadedSongs.length}` : ""})` },
     { id: "history", label: "Lịch sử" },
   ];
 
@@ -248,7 +272,7 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
       {/* TAB: ALL (Overview Cards + Recent Tracks) */}
       {activeTab === "all" && (
         <div className="space-y-8">
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             {/* Songs Overview Card */}
             <button
               type="button"
@@ -329,6 +353,27 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
                 <div>
                   <p className="text-base font-bold text-white">Bài hát đã thích</p>
                   <p className="text-xs text-white/60 mt-0.5">{likedSongs.length} bài yêu thích</p>
+                </div>
+                <ChevronRight className="w-4 h-4 text-white/55 group-hover:translate-x-0.5 transition-transform" />
+              </div>
+            </button>
+
+            {/* Offline Downloaded Songs Overview Card */}
+            <button
+              type="button"
+              onClick={() => handleSelectTab("downloaded")}
+              className="group relative h-44 rounded-[20px] overflow-hidden bg-gradient-to-br from-[#132922] via-[#121e1b] to-[#141418] border border-white/[0.08] hover:border-emerald-400/35 text-left p-4 flex flex-col justify-between transition-all cursor-pointer shadow-lg"
+            >
+              <div className="w-14 h-14 rounded-2xl bg-emerald-500/15 border border-emerald-400/25 backdrop-blur-md flex items-center justify-center">
+                <ArrowDownToLine className="w-7 h-7 text-emerald-400" />
+              </div>
+
+              <div className="flex items-end justify-between">
+                <div>
+                  <p className="text-base font-bold text-white">Đã tải xuống</p>
+                  <p className="text-xs text-emerald-200/75 mt-0.5">
+                    {downloadedSongs.length} bài • {totalDownloadedMb} MB
+                  </p>
                 </div>
                 <ChevronRight className="w-4 h-4 text-white/55 group-hover:translate-x-0.5 transition-transform" />
               </div>
@@ -498,6 +543,53 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
                   song={song}
                   index={idx}
                   playlistContext={filteredLiked}
+                  onAddToPlaylist={onAddToPlaylist}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* TAB: DOWNLOADED (OFFLINE) */}
+      {activeTab === "downloaded" && (
+        <div className="space-y-4">
+          {filteredDownloaded.length > 0 && (
+            <div className="flex items-center justify-between bg-white/[0.05] border border-white/[0.08] p-4 rounded-2xl">
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => playSong(filteredDownloaded[0], filteredDownloaded, null)}
+                  className="px-4 py-2 rounded-full bg-white text-black hover:bg-white/90 text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer"
+                >
+                  <Play className="w-3.5 h-3.5 fill-black" />
+                  <span>Phát tất cả</span>
+                </button>
+                <span className="text-xs text-emerald-300/85 font-medium">
+                  {filteredDownloaded.length} bài hát Offline • {totalDownloadedMb} MB (phát không cần mạng)
+                </span>
+              </div>
+            </div>
+          )}
+
+          {filteredDownloaded.length === 0 ? (
+            <div className="text-center py-20 text-white/45">
+              <ArrowDownToLine className="w-10 h-10 mx-auto mb-3 opacity-30" />
+              <p className="text-sm font-semibold text-white/75">
+                Chưa có bài hát nào được tải xuống
+              </p>
+              <p className="text-xs text-white/45 mt-1">
+                Bấm biểu tượng tải xuống trên bất kỳ bài hát hoặc playlist nào để nghe khi mất mạng
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-1">
+              {filteredDownloaded.map((song, idx) => (
+                <SongRow
+                  key={`dl-${song.id}`}
+                  song={song}
+                  index={idx}
+                  playlistContext={filteredDownloaded}
                   onAddToPlaylist={onAddToPlaylist}
                 />
               ))}

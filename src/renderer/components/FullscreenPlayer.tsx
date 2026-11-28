@@ -20,10 +20,12 @@ import {
   Loader2,
   MoreHorizontal,
   Plus,
+  Infinity as InfinityIcon,
 } from "lucide-react";
 import { usePlayer } from "../context/PlayerContext.tsx";
 import { LyricsView } from "./LyricsView.tsx";
 import { TrackThumbnail } from "./TrackThumbnail.tsx";
+import { DownloadButton } from "./DownloadButton.tsx";
 import { usePlaylistPicker } from "./PlaylistPickerPopover.tsx";
 
 function formatSec(sec: number): string {
@@ -48,6 +50,7 @@ export const FullscreenPlayer: React.FC = () => {
     isLoadingStream,
     accentColor,
     settings,
+    updateSettings,
     queue,
     queueIndex,
     isFullscreenPlayerOpen,
@@ -55,6 +58,7 @@ export const FullscreenPlayer: React.FC = () => {
     fullscreenTab,
     setFullscreenTab,
     activePlaylistId,
+    isFetchingAutoplay,
     togglePlay,
     nextSong,
     prevSong,
@@ -252,6 +256,7 @@ export const FullscreenPlayer: React.FC = () => {
                   >
                     <Plus className="w-5 h-5" />
                   </button>
+                  <DownloadButton song={currentSong} size="md" />
                   <button
                     type="button"
                     onClick={toggleLikeCurrent}
@@ -414,9 +419,36 @@ export const FullscreenPlayer: React.FC = () => {
             <LyricsView variant="fullscreen" />
           ) : (
             <div className="flex-1 flex flex-col min-h-0 pt-2">
-              <div className="px-4 pb-3 flex items-center justify-between">
-                <h3 className="text-base font-semibold text-white">Up Next</h3>
-                <span className="text-xs text-white/50">{queue.length} bài hát</span>
+              <div className="px-4 pb-2.5 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <h3 className="text-base font-semibold text-white">Up Next</h3>
+                  <span className="text-xs text-white/50">{queue.length} bài hát</span>
+                </div>
+
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={settings.autoplayEnabled}
+                  aria-label="Tự động phát nhạc tương tự (Autoplay)"
+                  onClick={() => updateSettings({ autoplayEnabled: !settings.autoplayEnabled })}
+                  className="px-3 py-1.5 rounded-full bg-white/[0.06] hover:bg-white/[0.11] border border-white/[0.08] flex items-center gap-2 cursor-pointer transition-colors"
+                >
+                  <InfinityIcon className="w-3.5 h-3.5 text-white/80" />
+                  <span className="text-xs font-medium text-white/85">
+                    {isFetchingAutoplay ? "Đang tìm gợi ý..." : "Autoplay"}
+                  </span>
+                  <span
+                    className={`relative w-8 h-4.5 rounded-full transition-colors duration-200 ${
+                      settings.autoplayEnabled ? "bg-[#fa243c]" : "bg-white/[0.18]"
+                    }`}
+                  >
+                    <span
+                      className={`absolute top-0.5 left-0.5 w-3.5 h-3.5 rounded-full bg-white shadow-sm transition-transform duration-200 ${
+                        settings.autoplayEnabled ? "translate-x-3.5" : "translate-x-0"
+                      }`}
+                    />
+                  </span>
+                </button>
               </div>
 
               <div className="flex-1 overflow-y-auto px-2 space-y-1.5">
@@ -427,59 +459,72 @@ export const FullscreenPlayer: React.FC = () => {
                 ) : (
                   queue.map((song, idx) => {
                     const isCurrent = idx === queueIndex;
+                    const showAutoplayDivider =
+                      Boolean(song.isAutoplay) && (idx === 0 || !queue[idx - 1]?.isAutoplay);
                     return (
-                      <div
-                        key={`${song.id}-${idx}`}
-                        className={`flex items-center gap-3 px-3 py-2.5 rounded-2xl transition-all group ${
-                          isCurrent
-                            ? "bg-white/[0.14] border border-white/[0.10]"
-                            : "hover:bg-white/[0.08] border border-transparent"
-                        }`}
-                      >
-                        <button
-                          type="button"
-                          onClick={() => playSong(song, queue)}
-                          className="flex items-center gap-3 flex-1 min-w-0 text-left cursor-pointer"
-                        >
-                          <div className="w-11 h-11 rounded-xl overflow-hidden bg-white/[0.08] flex-shrink-0 relative">
-                            <TrackThumbnail
-                              src={song.thumbnail}
-                              videoId={song.videoId || song.id}
-                              alt={song.title}
-                              iconSize="sm"
-                              className="w-full h-full"
-                            />
-                            {isCurrent && (
-                              <div className="absolute inset-0 bg-black/45 flex items-center justify-center">
-                                <Play className="w-4 h-4 text-white fill-white" />
-                              </div>
-                            )}
+                      <React.Fragment key={`${song.id}-${idx}`}>
+                        {showAutoplayDivider && (
+                          <div className="pt-3 pb-1.5 px-3 flex items-center gap-2.5">
+                            <div className="h-px flex-1 bg-white/[0.12]" />
+                            <span className="text-[10.5px] font-semibold tracking-[0.12em] uppercase text-white/50 whitespace-nowrap">
+                              TỰ ĐỘNG PHÁT CÙNG CHỦ ĐỀ
+                            </span>
+                            <div className="h-px flex-1 bg-white/[0.12]" />
                           </div>
-
-                          <div className="min-w-0 flex-1">
-                            <p className="text-sm font-semibold text-white truncate">
-                              {song.title}
-                            </p>
-                            <p className="text-xs text-white/55 truncate mt-0.5">
-                              {song.artists.map((a) => a.name).join(", ")}
-                            </p>
-                          </div>
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => openQuickSwitch(song, activePlaylistId)}
-                          title="Tìm bản phát khác (YouTube)"
-                          aria-label="Tìm bản phát khác"
-                          className="p-2 rounded-full text-white/40 hover:text-white hover:bg-white/[0.10] opacity-0 group-hover:opacity-100 transition-all cursor-pointer"
+                        )}
+                        <div
+                          className={`flex items-center gap-3 px-3 py-2.5 rounded-2xl transition-all group ${
+                            isCurrent
+                              ? "bg-white/[0.14] border border-white/[0.10]"
+                              : "hover:bg-white/[0.08] border border-transparent"
+                          }`}
                         >
-                          <MoreHorizontal className="w-4 h-4" />
-                        </button>
+                          <button
+                            type="button"
+                            onClick={() => playSong(song, queue)}
+                            className="flex items-center gap-3 flex-1 min-w-0 text-left cursor-pointer"
+                          >
+                            <div className="w-11 h-11 rounded-xl overflow-hidden bg-white/[0.08] flex-shrink-0 relative">
+                              <TrackThumbnail
+                                src={song.thumbnail}
+                                videoId={song.videoId || song.id}
+                                alt={song.title}
+                                iconSize="sm"
+                                className="w-full h-full"
+                              />
+                              {isCurrent && (
+                                <div className="absolute inset-0 bg-black/45 flex items-center justify-center">
+                                  <Play className="w-4 h-4 text-white fill-white" />
+                                </div>
+                              )}
+                            </div>
 
-                        <span className="text-xs text-white/50 tabular-nums w-10 text-right flex-shrink-0">
-                          {song.duration ? formatSec(song.duration) : "--:--"}
-                        </span>
-                      </div>
+                            <div className="min-w-0 flex-1">
+                              <p className="text-sm font-semibold text-white truncate">
+                                {song.title}
+                              </p>
+                              <p className="text-xs text-white/55 truncate mt-0.5">
+                                {song.artists.map((a) => a.name).join(", ")}
+                                {song.autoplayVibe ? ` • ${song.autoplayVibe}` : ""}
+                              </p>
+                            </div>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => openQuickSwitch(song, activePlaylistId)}
+                            title="Tìm bản phát khác (YouTube)"
+                            aria-label="Tìm bản phát khác"
+                            className="p-2 rounded-full text-white/40 hover:text-white hover:bg-white/[0.10] opacity-0 group-hover:opacity-100 transition-all cursor-pointer"
+                          >
+                            <MoreHorizontal className="w-4 h-4" />
+                          </button>
+
+                          <span className="text-xs text-white/50 tabular-nums w-10 text-right flex-shrink-0">
+                            {song.duration ? formatSec(song.duration) : "--:--"}
+                          </span>
+                        </div>
+                      </React.Fragment>
                     );
                   })
                 )}

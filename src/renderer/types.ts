@@ -48,6 +48,8 @@ export interface Song {
   album?: { name: string; id?: string | null } | null;
   explicit?: boolean;
   source?: string | null;
+  isAutoplay?: boolean;
+  autoplayVibe?: string;
 }
 
 export interface Playlist {
@@ -93,15 +95,76 @@ export interface StreamInfo {
   badgeText: string;
 }
 
+export interface YouTubeAccountInfo {
+  loggedIn: boolean;
+  accountName?: string | null;
+  email?: string | null;
+  channelHandle?: string | null;
+  photoUrl?: string | null;
+  visitorData?: string | null;
+  updatedAt: number;
+}
+
+export interface DiscordRpcStatus {
+  connected: boolean;
+  configured: boolean;
+}
+
+export interface DiscordPresencePayload {
+  title: string;
+  artist: string;
+  thumbnailUrl?: string | null;
+  durationSecs?: number | null;
+  currentTimeSecs?: number | null;
+  isPlaying: boolean;
+  videoId?: string | null;
+}
+
 export type RepeatMode = "off" | "all" | "one";
 export type ActiveView = "home" | "search" | "library" | "playlist-detail" | "lyrics";
+
+export interface DownloadedTrack {
+  videoId: string;
+  title: string;
+  artist: string;
+  duration?: number | null;
+  fileName: string;
+  mimeType: string;
+  coverFile?: string | null;
+  lyricsFile?: string | null;
+  fileSize: number;
+  downloadedAt: number;
+  localStreamUrl: string;
+  localCoverUrl?: string | null;
+  sourceThumbnail?: string | null;
+}
+
+export interface DownloadProgressEvent {
+  videoId: string;
+  percent: number;
+  status: "queued" | "downloading" | "completed" | "cancelled" | "error";
+  error?: string | null;
+}
+
+export interface StorageInfo {
+  downloadsDir: string;
+  totalBytes: number;
+  trackCount: number;
+}
+
+export interface BackupImportResult {
+  songsRestored: number;
+  likedRestored: number;
+  playlistsRestored: number;
+  frontendSettings?: Record<string, any> | null;
+}
 
 export interface MochyApi {
   // YouTube API
   search: (query: string) => Promise<any>;
   searchSongs: (query: string) => Promise<Song[]>;
   getStream: (videoId: string, quality?: string) => Promise<any>;
-  getLyrics: (title: string, artist?: string, duration?: number, videoId?: string) => Promise<LyricsData | null>;
+  getLyrics: (title: string, artist?: string, duration?: number, videoId?: string, offlineOnly?: boolean) => Promise<LyricsData | null>;
   getYouTubePlaylist?: (playlistId: string) => Promise<any>;
 
   // DB - Songs & Liked
@@ -146,6 +209,39 @@ export interface MochyApi {
   spotifyGetAutoSync: () => Promise<{ enabled: boolean; playlistIds: string[] }>;
   spotifySetAutoSync: (enabled: boolean, playlistIds?: string[]) => Promise<boolean>;
   onSpotifyProgress: (callback: (progress: any) => void) => () => void;
+
+  // YouTube Auth (Anti-Bot WebView2 Cookie Session)
+  youtubeOpenLogin: () => Promise<YouTubeAccountInfo | null>;
+  youtubeGetAccount: () => Promise<YouTubeAccountInfo | null>;
+  youtubeLogout: () => Promise<boolean>;
+  onYouTubeAuthChanged: (callback: (account: YouTubeAccountInfo | null) => void) => () => void;
+
+  // Discord Rich Presence (Local IPC)
+  updateDiscordPresence: (payload: DiscordPresencePayload) => Promise<DiscordRpcStatus>;
+  clearDiscordPresence: () => Promise<DiscordRpcStatus>;
+  getDiscordRpcStatus: () => Promise<DiscordRpcStatus>;
+  onDiscordStatusChanged: (callback: (status: DiscordRpcStatus) => void) => () => void;
+
+  // Offline Downloader, Local Stream, Storage & Backup/Restore
+  downloadTrack: (params: {
+    videoId: string;
+    title: string;
+    artist: string;
+    thumbnailUrl?: string | null;
+    duration?: number | null;
+    lyricsLrc?: string | null;
+    quality?: string | null;
+  }) => Promise<DownloadedTrack | null>;
+  cancelDownload: (videoId: string) => Promise<boolean>;
+  deleteDownloadedTrack: (videoId: string) => Promise<boolean>;
+  getDownloadedTracks: () => Promise<DownloadedTrack[]>;
+  getLocalPlayback: (videoId: string) => Promise<any>;
+  onDownloadProgress: (callback: (progress: DownloadProgressEvent) => void) => () => void;
+  getStorageInfo: () => Promise<StorageInfo>;
+  pickDownloadsFolder: () => Promise<string | null>;
+  changeDownloadsDir: (newDir: string, migrateExisting: boolean) => Promise<StorageInfo>;
+  exportUserDataBackup: (frontendSettings?: Record<string, any> | null) => Promise<string | null>;
+  importUserDataBackup: () => Promise<BackupImportResult | null>;
 }
 
 declare global {

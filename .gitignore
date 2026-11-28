@@ -8,6 +8,7 @@ dist/
 dist-electron/
 release/
 out/
+src-tauri/target/
 *.exe
 *.msi
 *.zip
@@ -24,8 +25,10 @@ out/
 *.pem
 *.key
 *.cert
+*cookie*.json
 
 # Databases and Local State
+downloads/
 *.db
 *.db-journal
 *.db-wal

@@ -1,6 +1,7 @@
 // src/renderer/App.tsx
 
 import React, { useState, useEffect, useCallback } from "react";
+import { ShieldAlert, WifiOff, X } from "lucide-react";
 import { PlayerProvider, usePlayer } from "./context/PlayerContext.tsx";
 import { Sidebar } from "./components/Sidebar.tsx";
 import { PlayerBar } from "./components/PlayerBar.tsx";
@@ -33,6 +34,10 @@ const MainLayout: React.FC = () => {
     quickSwitchTarget,
     closeQuickSwitch,
     error,
+    youtubeAuthToast,
+    dismissYoutubeAuthToast,
+    infoToast,
+    dismissInfoToast,
   } = usePlayer();
 
   const [activeView, setActiveView] = useState<ActiveView>("home");
@@ -44,6 +49,7 @@ const MainLayout: React.FC = () => {
   const [libraryTabRequestKey, setLibraryTabRequestKey] = useState(0);
 
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
+  const [settingsPlaybackFocusKey, setSettingsPlaybackFocusKey] = useState(0);
   const [isCreatePlaylistOpen, setIsCreatePlaylistOpen] = useState(false);
   const [isSpotifyModalOpen, setIsSpotifyModalOpen] = useState(false);
   const [songForAddToPlaylist, setSongForAddToPlaylist] = useState<Song | null>(null);
@@ -259,13 +265,65 @@ const MainLayout: React.FC = () => {
               />
             )}
 
-            {/* Subtle Playback Error Pill */}
-            {error && (
+            {/* Actionable YouTube Anti-Bot / 429 Circuit Breaker Toast */}
+            {youtubeAuthToast ? (
+              <div
+                role="alert"
+                className="pointer-events-auto fixed bottom-5 left-1/2 -translate-x-1/2 z-40 w-[min(92vw,560px)] px-4 py-3 rounded-2xl bg-[#191519]/95 backdrop-blur-2xl border border-rose-500/40 text-[#f5f5f7] shadow-[0_18px_50px_rgba(0,0,0,0.75)] flex items-center gap-3.5"
+              >
+                <div className="w-9 h-9 rounded-full bg-rose-500/20 border border-rose-500/35 text-rose-300 flex items-center justify-center shrink-0">
+                  <ShieldAlert className="w-4 h-4" />
+                </div>
+                <div className="flex-1 min-w-0 text-[12.5px] leading-snug text-[#e5e5ea]">
+                  {youtubeAuthToast.message}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    dismissYoutubeAuthToast();
+                    setSettingsPlaybackFocusKey((k) => k + 1);
+                    setIsSettingsModalOpen(true);
+                  }}
+                  className="min-h-[44px] px-4 rounded-full bg-[#fa243c] hover:bg-[#ff3b52] text-white text-[12px] font-semibold shrink-0 transition-colors cursor-pointer"
+                >
+                  Đăng nhập YouTube
+                </button>
+                <button
+                  type="button"
+                  onClick={dismissYoutubeAuthToast}
+                  aria-label="Đóng thông báo"
+                  className="w-11 h-11 rounded-full text-white/60 hover:text-white hover:bg-white/[0.08] flex items-center justify-center shrink-0 transition-colors cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            ) : (
+              error && (
+                <div
+                  role="status"
+                  className="pointer-events-none fixed bottom-5 left-1/2 -translate-x-1/2 z-40 px-4 py-2 rounded-full bg-[#1c1417]/90 backdrop-blur-xl border border-rose-500/35 text-rose-200 text-[12.5px] shadow-xl max-w-md truncate"
+                >
+                  {error}
+                </div>
+              )
+            )}
+
+            {/* Info / Offline Mode Toast */}
+            {infoToast && (
               <div
                 role="status"
-                className="pointer-events-none fixed bottom-5 left-1/2 -translate-x-1/2 z-40 px-4 py-2 rounded-full bg-[#1c1417]/90 backdrop-blur-xl border border-rose-500/35 text-rose-200 text-[12.5px] shadow-xl max-w-md truncate"
+                className="pointer-events-auto fixed bottom-16 left-1/2 -translate-x-1/2 z-50 px-4 py-2.5 rounded-full bg-[#191b22]/95 backdrop-blur-2xl border border-amber-400/35 text-amber-100 text-[12.5px] shadow-[0_14px_40px_rgba(0,0,0,0.75)] flex items-center gap-2.5 max-w-[90vw]"
               >
-                {error}
+                <WifiOff className="w-4 h-4 text-amber-300 shrink-0" />
+                <span className="truncate">{infoToast}</span>
+                <button
+                  type="button"
+                  onClick={dismissInfoToast}
+                  aria-label="Đóng thông báo"
+                  className="w-6 h-6 rounded-full text-white/60 hover:text-white hover:bg-white/[0.08] flex items-center justify-center shrink-0 cursor-pointer"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
               </div>
             )}
           </main>
@@ -283,6 +341,7 @@ const MainLayout: React.FC = () => {
           onClose={() => setIsSettingsModalOpen(false)}
           onOpenSpotifyImport={() => setIsSpotifyModalOpen(true)}
           onHistoryCleared={refreshPlaylists}
+          focusPlaybackKey={settingsPlaybackFocusKey}
         />
 
         <CreatePlaylistModal

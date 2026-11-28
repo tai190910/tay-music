@@ -2,10 +2,55 @@
 
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback, useMemo } from "react";
 import Hls from "hls.js";
-import { isValidTrackId, type Song, type LyricsData, type RepeatMode, type StreamInfo } from "../types.ts";
+import {
+  isValidTrackId,
+  type Song,
+  type LyricsData,
+  type RepeatMode,
+  type StreamInfo,
+  type DiscordRpcStatus,
+  type DownloadedTrack,
+  type DownloadProgressEvent,
+} from "../types.ts";
 import { extractDominantColor, DEFAULT_COLOR, type ExtractedColor } from "../utils/colorExtractor.ts";
+import { findAutoplayRecommendation } from "../utils/smartAutoplay.ts";
+import { getPreferredThumbnailUrl, syncLocalCoverCache } from "../components/TrackThumbnail.tsx";
 
 export type DeckId = "A" | "B";
+
+export interface YouTubeAuthToast {
+  reason: "bot" | "rate_limit";
+  message: string;
+}
+
+function extractErrorText(err: unknown): string {
+  if (typeof err === "string") return err;
+  if (err && typeof err === "object" && "message" in err && typeof (err as any).message === "string") {
+    return (err as any).message;
+  }
+  return String(err ?? "");
+}
+
+function classifyYouTubeBlockError(err: unknown): {
+  blocked: boolean;
+  is429: boolean;
+  isLoginRequired: boolean;
+} {
+  const lower = extractErrorText(err).toLowerCase();
+  const is429 =
+    lower.includes("429") ||
+    lower.includes("too many requests") ||
+    lower.includes("giới hạn tần suất");
+  const isLoginRequired =
+    lower.includes("login_required") ||
+    lower.includes("not a bot") ||
+    lower.includes("sign in to confirm");
+  return {
+    blocked: is429 || isLoginRequired,
+    is429,
+    isLoginRequired,
+  };
+}
 
 export interface AppSettings {
   saveLastState: boolean;
@@ -18,6 +63,8 @@ export interface AppSettings {
   typewriterLyrics: boolean;
   crossfadeEnabled: boolean;
   crossfadeDuration: number;
+  autoplayEnabled: boolean;
+  discordRpcEnabled: boolean;
 }
 
 export const DEFAULT_APP_SETTINGS: AppSettings = {
@@ -31,6 +78,8 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   typewriterLyrics: true,
   crossfadeEnabled: true,
   crossfadeDuration: 6,
+  autoplayEnabled: true,
+  discordRpcEnabled: true,
 };
 
 const SETTINGS_STORAGE_KEY = "tay_music_settings";
@@ -59,6 +108,17 @@ function readAppSettings(): AppSettings {
 
 function buildStreamInfo(playback: any): StreamInfo | null {
   if (!playback?.format) return null;
+  if (playback.streamClient === "LOCAL" || playback.format?.isLocal) {
+    const mime = String(playback.format.mimeType || "");
+    const extLabel = mime.includes("mpeg") ? "MP3" : mime.includes("webm") ? "OPUS" : "M4A";
+    return {
+      bitrate: 160,
+      mimeType: mime,
+      client: "LOCAL",
+      codec: extLabel,
+      badgeText: `OFFLINE • ${extLabel}`,
+    };
+  }
   const mime = playback.format.mimeType || "";
   const isSc = playback.streamClient === "SOUNDCLOUD";
   const codec = isSc
@@ -86,28 +146,46 @@ function resolveNextQueueTarget(
   fromIndex: number,
   curQueue: Song[],
   curRepeat: RepeatMode,
-  curShuffle: boolean
+  curShuffle: boolean,
+  offlineDownloadedIds?: Set<string> | null
 ): { song: Song; nextIndex: number } | null {
   if (curRepeat === "one" || curQueue.length === 0) return null;
 
+  const isPlayable = (s: Song) => {
+    if (!offlineDownloadedIds) return true;
+    const vid = (s.videoId || s.id || "").trim();
+    return offlineDownloadedIds.has(vid);
+  };
+
   if (curShuffle) {
-    if (curQueue.length === 1) {
-      return curRepeat === "all" ? { song: curQueue[0], nextIndex: 0 } : null;
+    const indices: number[] = [];
+    for (let i = 0; i < curQueue.length; i++) {
+      if (isPlayable(curQueue[i])) indices.push(i);
     }
-    let nextIdx = Math.floor(Math.random() * curQueue.length);
-    if (nextIdx === fromIndex) {
-      nextIdx = (fromIndex + 1 + Math.floor(Math.random() * (curQueue.length - 1))) % curQueue.length;
+    if (indices.length === 0) return null;
+    if (indices.length === 1) {
+      const onlyIdx = indices[0];
+      if (onlyIdx === fromIndex && curRepeat !== "all") return null;
+      return { song: curQueue[onlyIdx], nextIndex: onlyIdx };
     }
+    const others = indices.filter((i) => i !== fromIndex);
+    const pool = others.length > 0 ? others : indices;
+    const nextIdx = pool[Math.floor(Math.random() * pool.length)];
     return { song: curQueue[nextIdx], nextIndex: nextIdx };
   }
 
-  if (fromIndex < curQueue.length - 1) {
-    const nextIdx = fromIndex + 1;
-    return { song: curQueue[nextIdx], nextIndex: nextIdx };
+  for (let i = fromIndex + 1; i < curQueue.length; i++) {
+    if (isPlayable(curQueue[i])) {
+      return { song: curQueue[i], nextIndex: i };
+    }
   }
 
   if (curRepeat === "all") {
-    return { song: curQueue[0], nextIndex: 0 };
+    for (let i = 0; i <= fromIndex && i < curQueue.length; i++) {
+      if (isPlayable(curQueue[i])) {
+        return { song: curQueue[i], nextIndex: i };
+      }
+    }
   }
 
   return null;
@@ -160,6 +238,7 @@ interface PlayerContextType {
   isShuffle: boolean;
   isLiked: boolean;
   isLoadingStream: boolean;
+  isFetchingAutoplay: boolean;
   lyricsData: LyricsData | null;
   isLyricsOpen: boolean;
   isQueueOpen: boolean;
@@ -168,6 +247,12 @@ interface PlayerContextType {
   fullscreenTab: FullscreenTab;
   settings: AppSettings;
   error: string | null;
+  youtubeAuthToast: YouTubeAuthToast | null;
+  infoToast: string | null;
+  isOnline: boolean;
+  downloadedMap: Record<string, DownloadedTrack>;
+  downloadProgressMap: Record<string, DownloadProgressEvent>;
+  discordStatus: DiscordRpcStatus;
   accentColor: ExtractedColor;
   streamInfo: StreamInfo | null;
   resumeData: { song: Song; currentTime: number; duration: number; timestamp: number } | null;
@@ -198,6 +283,14 @@ interface PlayerContextType {
   setActivePlaylistId: (playlistId: string | null) => void;
   openQuickSwitch: (song: Song, playlistId?: string | null) => void;
   closeQuickSwitch: () => void;
+  dismissYoutubeAuthToast: () => void;
+  resetBotCircuitBreaker: () => void;
+  showInfoToast: (msg: string) => void;
+  dismissInfoToast: () => void;
+  refreshDownloadedTracks: () => Promise<void>;
+  downloadTrack: (song: Song) => Promise<void>;
+  cancelDownload: (videoId: string) => Promise<void>;
+  deleteDownloadedTrack: (videoId: string) => Promise<void>;
   replaceSongVersion: (
     oldSongId: string,
     newSong: Song,
@@ -226,6 +319,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const [isShuffle, setIsShuffle] = useState<boolean>(false);
   const [isLiked, setIsLiked] = useState<boolean>(false);
   const [isLoadingStream, setIsLoadingStream] = useState<boolean>(false);
+  const [isFetchingAutoplay, setIsFetchingAutoplay] = useState<boolean>(false);
   const [lyricsData, setLyricsData] = useState<LyricsData | null>(null);
   const [rightDrawerTab, setRightDrawerTab] = useState<RightDrawerTab>(null);
   const [isFullscreenPlayerOpen, setIsFullscreenPlayerOpen] = useState<boolean>(false);
@@ -275,6 +369,17 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   }, []);
 
   const [error, setError] = useState<string | null>(null);
+  const [youtubeAuthToast, setYoutubeAuthToast] = useState<YouTubeAuthToast | null>(null);
+  const [infoToast, setInfoToast] = useState<string | null>(null);
+  const [isOnline, setIsOnline] = useState<boolean>(() =>
+    typeof navigator !== "undefined" ? navigator.onLine : true
+  );
+  const [downloadedMap, setDownloadedMap] = useState<Record<string, DownloadedTrack>>({});
+  const [downloadProgressMap, setDownloadProgressMap] = useState<Record<string, DownloadProgressEvent>>({});
+  const [discordStatus, setDiscordStatus] = useState<DiscordRpcStatus>({
+    connected: false,
+    configured: false,
+  });
   const [accentColor, setAccentColor] = useState<ExtractedColor>(DEFAULT_COLOR);
   const [streamInfo, setStreamInfo] = useState<StreamInfo | null>({
     bitrate: 160,
@@ -314,10 +419,13 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     } catch {}
   }, [settings.saveLastState]);
 
-  // Dynamic dominant color extraction from current song thumbnail
+  // Dynamic dominant color extraction from current song thumbnail (always prefer i.ytimg.com CDN)
   useEffect(() => {
-    if (currentSong?.thumbnail) {
-      extractDominantColor(currentSong.thumbnail).then((color) => {
+    const preferredThumb = currentSong
+      ? getPreferredThumbnailUrl(currentSong.thumbnail, currentSong.videoId || currentSong.id)
+      : null;
+    if (preferredThumb) {
+      extractDominantColor(preferredThumb).then((color) => {
         setAccentColor(color);
         document.documentElement.style.setProperty("--dynamic-accent", color.hex);
         document.documentElement.style.setProperty("--dynamic-accent-rgb", color.rgbString);
@@ -331,7 +439,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       document.documentElement.style.setProperty("--dynamic-glow", `rgba(${DEFAULT_COLOR.rgbString}, 0.35)`);
       document.documentElement.style.setProperty("--dynamic-bg", `rgba(${DEFAULT_COLOR.rgbString}, 0.08)`);
     }
-  }, [currentSong?.thumbnail]);
+  }, [currentSong?.id, currentSong?.videoId, currentSong?.thumbnail]);
 
   // Playback timer & state refs
   const playedSecondsRef = useRef<number>(0);
@@ -343,16 +451,29 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const repeatModeRef = useRef<RepeatMode>("off");
   const isShuffleRef = useRef<boolean>(false);
   const currentSongRef = useRef<Song | null>(null);
+  const isPlayingRef = useRef<boolean>(false);
+  const durationRef = useRef<number>(0);
   const activePlaylistIdRef = useRef<string | null>(null);
   const settingsRef = useRef<AppSettings>(settings);
   const volumeRef = useRef<number>(volume);
   const isMutedRef = useRef<boolean>(isMuted);
   const pausedByMuteRef = useRef<boolean>(false);
   const consecutiveFailuresRef = useRef<number>(0);
+  const botOrRateLimitStreakRef = useRef<number>(0);
+  const botCircuitBrokenRef = useRef<boolean>(false);
+  const discordSyncTimerRef = useRef<number | null>(null);
+  const discordSeekTimerRef = useRef<number | null>(null);
+  const isOnlineRef = useRef<boolean>(isOnline);
+  const downloadedMapRef = useRef<Record<string, DownloadedTrack>>(downloadedMap);
+  const infoToastTimerRef = useRef<number | null>(null);
 
   const loadGenRef = useRef<number>(0);
   const preloadGenRef = useRef<number>(0);
   const preloadRef = useRef<PreloadedTrack | null>(null);
+  const playedHistoryIdsRef = useRef<Set<string>>(new Set());
+  const activePlaylistNameRef = useRef<string | null>(null);
+  const autoplayGenRef = useRef<number>(0);
+  const autoplayRequestForSongIdRef = useRef<string | null>(null);
   const crossfadeRef = useRef<CrossfadeRuntime>({
     active: false,
     outgoingDeckId: "A",
@@ -507,9 +628,47 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   }, [getMasterGain, resetDeck]);
 
   const cancelCrossfadeAndPreload = useCallback(() => {
+    autoplayGenRef.current += 1;
+    autoplayRequestForSongIdRef.current = null;
+    setIsFetchingAutoplay(false);
     cancelCrossfade();
     clearStandbyPreload();
   }, [cancelCrossfade, clearStandbyPreload]);
+
+  const dismissYoutubeAuthToast = useCallback(() => {
+    setYoutubeAuthToast(null);
+  }, []);
+
+  const resetBotCircuitBreaker = useCallback(() => {
+    botOrRateLimitStreakRef.current = 0;
+    botCircuitBrokenRef.current = false;
+    consecutiveFailuresRef.current = 0;
+    setYoutubeAuthToast(null);
+  }, []);
+
+  const tripBotCircuitBreaker = useCallback(
+    (is429: boolean) => {
+      botCircuitBrokenRef.current = true;
+      cancelCrossfadeAndPreload();
+      setYoutubeAuthToast({
+        reason: is429 ? "rate_limit" : "bot",
+        message: is429
+          ? "Gặp lỗi HTTP 429 liên tiếp. Đã tạm dừng tự chuyển bài và tắt Autoplay/Preload để tránh bị khóa IP. Hãy đăng nhập YouTube trong Settings."
+          : "YouTube chặn bot (LOGIN_REQUIRED) liên tiếp. Đã dừng tự nhảy bài và tạm tắt Autoplay/Preload. Bấm đăng nhập YouTube trong Settings để tiếp tục nghe.",
+      });
+    },
+    [cancelCrossfadeAndPreload]
+  );
+
+  useEffect(() => {
+    if (!window.mochyApi?.onYouTubeAuthChanged) return;
+    return window.mochyApi.onYouTubeAuthChanged((acc) => {
+      if (acc?.loggedIn) {
+        resetBotCircuitBreaker();
+        setError(null);
+      }
+    });
+  }, [resetBotCircuitBreaker]);
 
   const applyCrossfadeVolumes = useCallback(
     (progress: number) => {
@@ -550,19 +709,64 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   // Cancel active crossfade or stale preload when crossfade settings / repeat mode disable it
   useEffect(() => {
     if (!settings.crossfadeEnabled || settings.crossfadeDuration <= 0 || repeatMode === "one") {
-      cancelCrossfadeAndPreload();
-    }
-  }, [settings.crossfadeEnabled, settings.crossfadeDuration, repeatMode, cancelCrossfadeAndPreload]);
-
-  // Invalidate non-active standby preload if queue order or shuffle state changes
-  useEffect(() => {
-    if (!crossfadeRef.current.active) {
+      cancelCrossfade();
       clearStandbyPreload();
     }
+  }, [settings.crossfadeEnabled, settings.crossfadeDuration, repeatMode, cancelCrossfade, clearStandbyPreload]);
+
+  // Cancel pending autoplay fetch if Autoplay is disabled or Repeat mode turns on
+  useEffect(() => {
+    if (!settings.autoplayEnabled || repeatMode !== "off") {
+      autoplayGenRef.current += 1;
+      autoplayRequestForSongIdRef.current = null;
+      setIsFetchingAutoplay(false);
+    }
+  }, [settings.autoplayEnabled, repeatMode]);
+
+  // Track played/queued IDs for anti-duplicate Autoplay & preserve valid preload when appending
+  useEffect(() => {
+    for (const s of queue) {
+      if (isValidTrackId(s.id)) {
+        playedHistoryIdsRef.current.add(s.id);
+      }
+    }
+    if (crossfadeRef.current.active) return;
+
+    const existing = preloadRef.current;
+    if (existing && existing.forSongId === currentSongRef.current?.id) {
+      const expectedNext = resolveNextQueueTarget(
+        queueIndexRef.current,
+        queue,
+        repeatModeRef.current,
+        isShuffleRef.current
+      );
+      if (expectedNext && expectedNext.song.id === existing.song.id) {
+        return;
+      }
+    }
+    clearStandbyPreload();
   }, [queue, isShuffle, clearStandbyPreload]);
 
   useEffect(() => {
     activePlaylistIdRef.current = activePlaylistId;
+    if (!activePlaylistId || !window.mochyApi) {
+      activePlaylistNameRef.current = null;
+      return;
+    }
+    let cancelled = false;
+    window.mochyApi
+      .getPlaylist(activePlaylistId)
+      .then((pl) => {
+        if (!cancelled) {
+          activePlaylistNameRef.current = pl?.name ?? null;
+        }
+      })
+      .catch(() => {
+        if (!cancelled) activePlaylistNameRef.current = null;
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [activePlaylistId]);
 
   useEffect(() => {
@@ -584,6 +788,277 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   useEffect(() => {
     currentSongRef.current = currentSong;
   }, [currentSong]);
+
+  useEffect(() => {
+    isPlayingRef.current = isPlaying;
+  }, [isPlaying]);
+
+  useEffect(() => {
+    durationRef.current = duration;
+  }, [duration]);
+
+  useEffect(() => {
+    isOnlineRef.current = isOnline;
+  }, [isOnline]);
+
+  useEffect(() => {
+    downloadedMapRef.current = downloadedMap;
+  }, [downloadedMap]);
+
+  const dismissInfoToast = useCallback(() => {
+    if (infoToastTimerRef.current !== null) {
+      window.clearTimeout(infoToastTimerRef.current);
+      infoToastTimerRef.current = null;
+    }
+    setInfoToast(null);
+  }, []);
+
+  const showInfoToast = useCallback((msg: string) => {
+    if (infoToastTimerRef.current !== null) {
+      window.clearTimeout(infoToastTimerRef.current);
+    }
+    setInfoToast(msg);
+    infoToastTimerRef.current = window.setTimeout(() => {
+      infoToastTimerRef.current = null;
+      setInfoToast(null);
+    }, 3500);
+  }, []);
+
+  const refreshDownloadedTracks = useCallback(async () => {
+    if (!window.mochyApi?.getDownloadedTracks) return;
+    try {
+      const list = await window.mochyApi.getDownloadedTracks();
+      const map: Record<string, DownloadedTrack> = {};
+      for (const t of list || []) {
+        if (t?.videoId) {
+          map[t.videoId] = t;
+        }
+      }
+      downloadedMapRef.current = map;
+      setDownloadedMap(map);
+      syncLocalCoverCache(list || []);
+    } catch (err) {
+      console.warn("[Offline] Failed to load downloaded tracks:", err);
+    }
+  }, []);
+
+  const downloadTrack = useCallback(
+    async (song: Song) => {
+      if (!window.mochyApi?.downloadTrack) return;
+      if (!isOnlineRef.current) {
+        showInfoToast("Cần kết nối mạng để tải bài hát xuống máy");
+        return;
+      }
+      const vid = ((song as any)?.videoId || song?.id || "").trim();
+      if (!isValidTrackId(vid)) {
+        showInfoToast("Mã bài hát không hợp lệ để tải xuống");
+        return;
+      }
+      const artist = song.artists?.map((a) => a.name).filter(Boolean).join(", ") || "Nghệ sĩ chưa rõ";
+      const thumb = getPreferredThumbnailUrl(song.thumbnail, vid);
+      let lrc: string | null = null;
+      if (currentSongRef.current?.id === vid && lyricsData?.parsed?.isSynced && lyricsData?.lyrics) {
+        lrc = lyricsData.lyrics;
+      }
+
+      setDownloadProgressMap((prev) => ({
+        ...prev,
+        [vid]: { videoId: vid, percent: 0, status: "queued" },
+      }));
+
+      try {
+        await window.mochyApi.downloadTrack({
+          videoId: vid,
+          title: song.title,
+          artist,
+          thumbnailUrl: thumb,
+          duration: song.duration ?? null,
+          lyricsLrc: lrc,
+          quality: settingsRef.current.streamQuality || "HIGH",
+        });
+        await refreshDownloadedTracks();
+      } catch (err: any) {
+        const msg = extractErrorText(err);
+        showInfoToast(`Tải "${song.title}" thất bại: ${msg}`);
+        setDownloadProgressMap((prev) => {
+          const copy = { ...prev };
+          delete copy[vid];
+          return copy;
+        });
+      }
+    },
+    [lyricsData, refreshDownloadedTracks, showInfoToast]
+  );
+
+  const cancelDownload = useCallback(async (videoId: string) => {
+    const vid = videoId.trim();
+    if (!vid || !window.mochyApi?.cancelDownload) return;
+    try {
+      await window.mochyApi.cancelDownload(vid);
+    } catch {}
+    setDownloadProgressMap((prev) => {
+      const copy = { ...prev };
+      delete copy[vid];
+      return copy;
+    });
+  }, []);
+
+  const deleteDownloadedTrack = useCallback(
+    async (videoId: string) => {
+      const vid = videoId.trim();
+      if (!vid || !window.mochyApi?.deleteDownloadedTrack) return;
+      try {
+        await window.mochyApi.deleteDownloadedTrack(vid);
+        await refreshDownloadedTracks();
+        showInfoToast("Đã xóa file nhạc khỏi bộ nhớ cục bộ");
+      } catch (err) {
+        console.warn("[Offline] Failed to delete downloaded track:", err);
+      }
+    },
+    [refreshDownloadedTracks, showInfoToast]
+  );
+
+  // Track online/offline state and subscribe to local downloader index + progress events
+  useEffect(() => {
+    const onOnline = () => {
+      isOnlineRef.current = true;
+      setIsOnline(true);
+    };
+    const onOffline = () => {
+      isOnlineRef.current = false;
+      setIsOnline(false);
+      showInfoToast("Mất kết nối mạng: Đã chuyển sang Chế độ Offline");
+    };
+    window.addEventListener("online", onOnline);
+    window.addEventListener("offline", onOffline);
+
+    refreshDownloadedTracks();
+
+    const unlistenProgress = window.mochyApi?.onDownloadProgress?.((evt) => {
+      if (!evt?.videoId) return;
+      if (evt.status === "completed") {
+        setDownloadProgressMap((prev) => {
+          const copy = { ...prev };
+          delete copy[evt.videoId];
+          return copy;
+        });
+        refreshDownloadedTracks();
+      } else if (evt.status === "cancelled" || evt.status === "error") {
+        setDownloadProgressMap((prev) => {
+          const copy = { ...prev };
+          delete copy[evt.videoId];
+          return copy;
+        });
+      } else {
+        setDownloadProgressMap((prev) => ({
+          ...prev,
+          [evt.videoId]: evt,
+        }));
+      }
+    });
+
+    return () => {
+      window.removeEventListener("online", onOnline);
+      window.removeEventListener("offline", onOffline);
+      unlistenProgress?.();
+      if (infoToastTimerRef.current !== null) {
+        window.clearTimeout(infoToastTimerRef.current);
+      }
+    };
+  }, [refreshDownloadedTracks, showInfoToast]);
+
+  const getCurrentTime = useCallback(() => {
+    return audioRef.current?.currentTime ?? 0;
+  }, []);
+
+  const syncDiscordPresenceNow = useCallback(async () => {
+    if (!window.mochyApi?.updateDiscordPresence) return;
+    if (!settingsRef.current.discordRpcEnabled) return;
+    const song = currentSongRef.current;
+    if (!song) return;
+
+    const artist =
+      song.artists?.map((a) => a.name).filter(Boolean).join(", ") || "Nghệ sĩ chưa rõ";
+    const thumbnailUrl = getPreferredThumbnailUrl(song.thumbnail, song.videoId || song.id);
+    const audioEl = decksRef.current?.[activeDeckRef.current]?.audio;
+    const rawDuration =
+      audioEl && Number.isFinite(audioEl.duration) && audioEl.duration > 0
+        ? audioEl.duration
+        : durationRef.current > 0
+          ? durationRef.current
+          : song.duration || 0;
+    const currentTimeSecs = Math.max(0, getCurrentTime());
+    const videoId = (song.videoId || song.id || "").trim() || null;
+
+    try {
+      const status = await window.mochyApi.updateDiscordPresence({
+        title: song.title,
+        artist,
+        thumbnailUrl,
+        durationSecs: rawDuration > 0 ? rawDuration : null,
+        currentTimeSecs,
+        isPlaying: isPlayingRef.current,
+        videoId,
+      });
+      setDiscordStatus(status);
+    } catch {
+      // Never block or lag playback if Discord IPC is unavailable
+    }
+  }, [getCurrentTime]);
+
+  useEffect(() => {
+    const api = window.mochyApi;
+    if (!api) return;
+    const unlisten = api.onDiscordStatusChanged?.((st) => {
+      setDiscordStatus(st);
+    });
+    if (settingsRef.current.discordRpcEnabled) {
+      api.getDiscordRpcStatus?.().then(setDiscordStatus).catch(() => {});
+    }
+    const handleUnload = () => {
+      api.clearDiscordPresence?.().catch(() => {});
+    };
+    window.addEventListener("beforeunload", handleUnload);
+    return () => {
+      unlisten?.();
+      window.removeEventListener("beforeunload", handleUnload);
+      if (discordSyncTimerRef.current !== null) {
+        window.clearTimeout(discordSyncTimerRef.current);
+      }
+      if (discordSeekTimerRef.current !== null) {
+        window.clearTimeout(discordSeekTimerRef.current);
+      }
+    };
+  }, []);
+
+  const roundedDuration = Math.round(duration || 0);
+  useEffect(() => {
+    const api = window.mochyApi;
+    if (!api) return;
+
+    if (discordSyncTimerRef.current !== null) {
+      window.clearTimeout(discordSyncTimerRef.current);
+      discordSyncTimerRef.current = null;
+    }
+
+    if (!settings.discordRpcEnabled) {
+      if (discordSeekTimerRef.current !== null) {
+        window.clearTimeout(discordSeekTimerRef.current);
+        discordSeekTimerRef.current = null;
+      }
+      api.clearDiscordPresence?.().then(setDiscordStatus).catch(() => {});
+      return;
+    }
+
+    if (!currentSong) {
+      api.getDiscordRpcStatus?.().then(setDiscordStatus).catch(() => {});
+      return;
+    }
+
+    discordSyncTimerRef.current = window.setTimeout(() => {
+      syncDiscordPresenceNow();
+    }, 250);
+  }, [currentSong?.id, isPlaying, roundedDuration, settings.discordRpcEnabled, syncDiscordPresenceNow]);
 
   const recordHistory = useCallback(() => {
     const song = currentSongRef.current;
@@ -629,6 +1104,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
     const myGen = ++loadGenRef.current;
     const promotedSong = preload.song;
+    playedHistoryIdsRef.current.add(promotedSong.id);
     const nextAudioDur =
       Number.isFinite(incoming.audio.duration) && incoming.audio.duration > 0
         ? incoming.audio.duration
@@ -764,13 +1240,17 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const preloadNextTrackOnStandby = useCallback(
     async (forSongId: string) => {
       if (!decksRef.current || !window.mochyApi) return;
-      if (crossfadeRef.current.active) return;
+      if (crossfadeRef.current.active || botCircuitBrokenRef.current) return;
 
+      const offlineIds = !isOnlineRef.current
+        ? new Set(Object.keys(downloadedMapRef.current))
+        : null;
       const target = resolveNextQueueTarget(
         queueIndexRef.current,
         queueRef.current,
         repeatModeRef.current,
-        isShuffleRef.current
+        isShuffleRef.current,
+        offlineIds
       );
       if (!target) return;
 
@@ -790,7 +1270,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
       const artist = nextSongObj.artists[0]?.name || "";
       const lyricsPromise = window.mochyApi
-        .getLyrics(nextSongObj.title, artist, nextSongObj.duration ?? undefined, cleanNextId)
+        .getLyrics(nextSongObj.title, artist, nextSongObj.duration ?? undefined, cleanNextId, !isOnlineRef.current)
         .catch(() => null);
 
       const entry: PreloadedTrack = {
@@ -811,10 +1291,20 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         currentSongRef.current?.id !== forSongId;
 
       try {
-        const playback = await window.mochyApi.getStream(
-          cleanNextId,
-          settingsRef.current.streamQuality || "HIGH"
-        );
+        let playback: any = null;
+        if (downloadedMapRef.current[cleanNextId] && window.mochyApi.getLocalPlayback) {
+          playback = await window.mochyApi.getLocalPlayback(cleanNextId);
+        }
+        if (!playback?.streamUrl) {
+          if (!isOnlineRef.current) {
+            if (preloadRef.current === entry) preloadRef.current = null;
+            return;
+          }
+          playback = await window.mochyApi.getStream(
+            cleanNextId,
+            settingsRef.current.streamQuality || "HIGH"
+          );
+        }
         if (isStale() || !playback?.streamUrl) {
           if (preloadRef.current === entry) preloadRef.current = null;
           return;
@@ -832,15 +1322,23 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         }
 
         entry.status = "ready";
+        botOrRateLimitStreakRef.current = 0;
         console.log("[Crossfade] Preloaded next track on Deck", standbyDeckId, ":", nextSongObj.title);
       } catch (err) {
         console.warn("[Crossfade] Standby preload failed (will fall back to standard transition):", err);
         if (preloadRef.current === entry) {
           entry.status = "error";
         }
+        const block = classifyYouTubeBlockError(err);
+        if (block.blocked) {
+          botOrRateLimitStreakRef.current += 1;
+          if (botOrRateLimitStreakRef.current >= 2) {
+            tripBotCircuitBreaker(block.is429);
+          }
+        }
       }
     },
-    [attachStreamToDeck, resetDeck]
+    [attachStreamToDeck, resetDeck, tripBotCircuitBreaker]
   );
 
   // Use ref bridges so listeners bound once on Deck A & Deck B always invoke latest handlers
@@ -868,6 +1366,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       };
 
       recordHistory();
+      playedHistoryIdsRef.current.add(cleanId);
       playedSecondsRef.current = 0;
       lastSavedResumeSecRef.current = -1;
       setCurrentSong(validSong);
@@ -885,12 +1384,32 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         });
       }
 
-      // 1. Fetch stream URL for active deck
+      // 1. Local-first Hybrid Playback: check local disk before touching YouTube API
+      let localPlayback: any = null;
+      if (downloadedMapRef.current[cleanId] && window.mochyApi?.getLocalPlayback) {
+        try {
+          localPlayback = await window.mochyApi.getLocalPlayback(cleanId);
+        } catch (err) {
+          console.warn("[PlayerContext] getLocalPlayback warning:", err);
+        }
+      }
+      if (loadGenRef.current !== myGen) return;
+
+      if (!localPlayback?.streamUrl && !isOnlineRef.current) {
+        setIsLoadingStream(false);
+        setIsPlaying(false);
+        showInfoToast("Bài hát này chưa được tải xuống, cần kết nối mạng để phát");
+        return;
+      }
+
       try {
-        const playback = await window.mochyApi.getStream(
-          cleanId,
-          settingsRef.current.streamQuality || "HIGH"
-        );
+        const playback =
+          localPlayback?.streamUrl
+            ? localPlayback
+            : await window.mochyApi.getStream(
+                cleanId,
+                settingsRef.current.streamQuality || "HIGH"
+              );
         if (loadGenRef.current !== myGen) return;
 
         const info = buildStreamInfo(playback);
@@ -913,24 +1432,45 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
           setIsPlaying(true);
           consecutiveFailuresRef.current = 0;
+          botOrRateLimitStreakRef.current = 0;
+          botCircuitBrokenRef.current = false;
           console.log("[PlayerContext] audio.play() succeeded on Deck", activeSlot.id);
         }
       } catch (err: any) {
         if (loadGenRef.current !== myGen) return;
         console.error("Stream extraction failed:", err);
         setIsPlaying(false);
-        setError("Lỗi tải luồng nhạc: " + (err.message || "403 Forbidden"));
+
+        const errText = extractErrorText(err);
+        const block = classifyYouTubeBlockError(err);
+
+        if (block.blocked) {
+          botOrRateLimitStreakRef.current += 1;
+          setError(
+            block.is429
+              ? "YouTube đang giới hạn tần suất (HTTP 429). Vui lòng đăng nhập YouTube trong Settings."
+              : "YouTube yêu cầu xác thực chống bot (LOGIN_REQUIRED). Vui lòng đăng nhập YouTube trong Settings."
+          );
+          if (botOrRateLimitStreakRef.current >= 2) {
+            tripBotCircuitBreaker(block.is429);
+            return;
+          }
+        } else {
+          setError("Lỗi tải luồng nhạc: " + (errText || "Không thể phát bài hát này"));
+        }
+
         if (
+          !botCircuitBrokenRef.current &&
           !settingsRef.current.dontSkipOnFailure &&
           queueRef.current.length > 1 &&
           consecutiveFailuresRef.current < 3
         ) {
           consecutiveFailuresRef.current += 1;
           setTimeout(() => {
-            if (loadGenRef.current === myGen) {
+            if (loadGenRef.current === myGen && !botCircuitBrokenRef.current) {
               handleSongEndedRef.current();
             }
-          }, 1200);
+          }, 1500);
         }
       } finally {
         if (loadGenRef.current === myGen) {
@@ -945,7 +1485,8 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           validSong.title,
           artist,
           validSong.duration ?? undefined,
-          cleanId
+          cleanId,
+          !isOnlineRef.current
         );
         if (loadGenRef.current === myGen && result) {
           setLyricsData(result);
@@ -954,7 +1495,99 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         console.warn("Failed to load lyrics:", err);
       }
     },
-    [attachStreamToDeck, cancelCrossfadeAndPreload, getMasterGain, recordHistory]
+    [attachStreamToDeck, cancelCrossfadeAndPreload, getMasterGain, recordHistory, tripBotCircuitBreaker]
+  );
+
+  const triggerSmartAutoplay = useCallback(
+    async (seedSong: Song, autoPlayOnFinish = false) => {
+      if (
+        !isOnlineRef.current ||
+        botCircuitBrokenRef.current ||
+        !settingsRef.current.autoplayEnabled ||
+        repeatModeRef.current !== "off"
+      ) {
+        if (autoPlayOnFinish) setIsPlaying(false);
+        return;
+      }
+      if (!autoPlayOnFinish && autoplayRequestForSongIdRef.current === seedSong.id) {
+        return;
+      }
+
+      autoplayRequestForSongIdRef.current = seedSong.id;
+      const myGen = ++autoplayGenRef.current;
+      setIsFetchingAutoplay(true);
+
+      playedHistoryIdsRef.current.add(seedSong.id);
+      for (const s of queueRef.current) {
+        if (isValidTrackId(s.id)) playedHistoryIdsRef.current.add(s.id);
+      }
+
+      try {
+        const rec = await findAutoplayRecommendation(
+          seedSong,
+          playedHistoryIdsRef.current,
+          activePlaylistNameRef.current
+        );
+        if (autoplayGenRef.current !== myGen) return;
+        if (!autoPlayOnFinish && currentSongRef.current?.id !== seedSong.id) return;
+
+        if (!rec) {
+          if (autoPlayOnFinish) setIsPlaying(false);
+          return;
+        }
+
+        const nextSongItem = rec.song;
+        playedHistoryIdsRef.current.add(nextSongItem.id);
+
+        const baseQueue = queueRef.current.length > 0 ? queueRef.current : [seedSong];
+        const nextQueue = [...baseQueue, nextSongItem];
+        const nextIndex = nextQueue.length - 1;
+
+        queueRef.current = nextQueue;
+        setQueue(nextQueue);
+
+        console.log(
+          `[SmartAutoplay] Queued [${rec.classification.label}] (${rec.query}): ${nextSongItem.title}`
+        );
+
+        if (autoPlayOnFinish) {
+          queueIndexRef.current = nextIndex;
+          setQueueIndex(nextIndex);
+          await loadAndPlay(nextSongItem);
+          return;
+        }
+
+        // If already inside Crossfade preload window, preload immediately onto standby deck
+        const activeAudio = decksRef.current?.[activeDeckRef.current].audio;
+        const cfSec = getEffectiveCrossfadeSec();
+        if (
+          activeAudio &&
+          cfSec > 0 &&
+          Number.isFinite(activeAudio.duration) &&
+          activeAudio.duration >= cfSec * 2 &&
+          activeAudio.duration - activeAudio.currentTime <= cfSec + PRELOAD_LEAD_SECONDS &&
+          !crossfadeRef.current.active &&
+          (!preloadRef.current || preloadRef.current.forSongId !== seedSong.id)
+        ) {
+          preloadNextTrackOnStandby(seedSong.id);
+        }
+      } catch (err) {
+        console.warn("[SmartAutoplay] Failed:", err);
+        const block = classifyYouTubeBlockError(err);
+        if (block.blocked) {
+          botOrRateLimitStreakRef.current += 1;
+          if (botOrRateLimitStreakRef.current >= 2) {
+            tripBotCircuitBreaker(block.is429);
+          }
+        }
+        if (autoPlayOnFinish) setIsPlaying(false);
+      } finally {
+        if (autoplayGenRef.current === myGen) {
+          setIsFetchingAutoplay(false);
+        }
+      }
+    },
+    [getEffectiveCrossfadeSec, loadAndPlay, preloadNextTrackOnStandby, tripBotCircuitBreaker]
   );
 
   const handleSongEnded = useCallback(() => {
@@ -969,19 +1602,39 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         activeAudio.currentTime = 0;
         activeAudio.volume = getMasterGain();
         activeAudio.play().catch((err) => console.error("[AudioPlayError]", err));
+        if (settingsRef.current.discordRpcEnabled) {
+          if (discordSyncTimerRef.current !== null) {
+            window.clearTimeout(discordSyncTimerRef.current);
+          }
+          discordSyncTimerRef.current = window.setTimeout(() => {
+            syncDiscordPresenceNow();
+          }, 250);
+        }
       }
       return;
     }
 
-    const nextTarget = resolveNextQueueTarget(curIdx, curQueue, curRepeat, curShuffle);
+    const offlineIds = !isOnlineRef.current
+      ? new Set(Object.keys(downloadedMapRef.current))
+      : null;
+    const nextTarget = resolveNextQueueTarget(curIdx, curQueue, curRepeat, curShuffle, offlineIds);
     if (!nextTarget) {
+      if (
+        isOnlineRef.current &&
+        settingsRef.current.autoplayEnabled &&
+        curRepeat === "off" &&
+        currentSongRef.current
+      ) {
+        triggerSmartAutoplay(currentSongRef.current, true);
+        return;
+      }
       setIsPlaying(false);
       return;
     }
 
     setQueueIndex(nextTarget.nextIndex);
     loadAndPlay(nextTarget.song);
-  }, [getMasterGain, loadAndPlay]);
+  }, [getMasterGain, loadAndPlay, triggerSmartAutoplay]);
 
   handleSongEndedRef.current = handleSongEnded;
 
@@ -1011,23 +1664,45 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       } catch {}
     }
 
-    // Crossfade scheduling (preload ~15s ahead, fade inside remaining <= cfSec)
     const cfSec = getEffectiveCrossfadeSec();
     const dur = audio.duration;
     const song = currentSongRef.current;
-
-    if (
-      cfSec <= 0 ||
-      !song ||
-      repeatModeRef.current === "one" ||
-      !Number.isFinite(dur) ||
-      dur < cfSec * 2 ||
-      audio.paused
-    ) {
+    if (!song || !Number.isFinite(dur) || dur <= 0 || audio.paused) {
       return;
     }
 
     const remaining = dur - cur;
+    const autoplayLeadSec = Math.max(20, cfSec + PRELOAD_LEAD_SECONDS + 3);
+
+    // 1. Smart Autoplay trigger (15-20s before end on final track when Repeat is OFF & Online)
+    if (
+      isOnlineRef.current &&
+      !botCircuitBrokenRef.current &&
+      settingsRef.current.autoplayEnabled &&
+      repeatModeRef.current === "off" &&
+      remaining <= autoplayLeadSec &&
+      remaining > 1.5 &&
+      resolveNextQueueTarget(
+        queueIndexRef.current,
+        queueRef.current,
+        repeatModeRef.current,
+        isShuffleRef.current
+      ) === null &&
+      autoplayRequestForSongIdRef.current !== song.id &&
+      !crossfadeRef.current.active
+    ) {
+      triggerSmartAutoplay(song, false);
+    }
+
+    // 2. Crossfade scheduling (preload ~15s ahead, fade inside remaining <= cfSec)
+    if (
+      botCircuitBrokenRef.current ||
+      cfSec <= 0 ||
+      repeatModeRef.current === "one" ||
+      dur < cfSec * 2
+    ) {
+      return;
+    }
 
     if (
       !crossfadeRef.current.active &&
@@ -1204,6 +1879,9 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   ) => {
     if (!rawSong) return;
 
+    // Allow manual user play attempt even if circuit breaker paused auto-skip/autoplay earlier
+    botCircuitBrokenRef.current = false;
+
     const rawId = (rawSong as any)?.videoId || rawSong?.id || (rawSong as any)?.browseId;
     if (!isValidTrackId(rawId)) {
       console.warn("[PlayerContext] playSong rejected invalid trackId:", rawId, rawSong);
@@ -1290,6 +1968,21 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     cancelCrossfadeAndPreload();
     if (queue.length === 0) return;
 
+    const offlineIds = !isOnlineRef.current
+      ? new Set(Object.keys(downloadedMapRef.current))
+      : null;
+
+    if (offlineIds) {
+      const target = resolveNextQueueTarget(queueIndex, queue, "all", isShuffle, offlineIds);
+      if (!target) {
+        showInfoToast("Không có bài hát đã tải xuống khác trong hàng đợi");
+        return;
+      }
+      setQueueIndex(target.nextIndex);
+      loadAndPlay(target.song);
+      return;
+    }
+
     let nextIdx = queueIndex + 1;
     if (isShuffle) {
       if (queue.length > 1) {
@@ -1318,6 +2011,20 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       return;
     }
 
+    if (!isOnlineRef.current) {
+      for (let step = 1; step <= queue.length; step++) {
+        const idx = (queueIndex - step + queue.length) % queue.length;
+        const vid = ((queue[idx] as any)?.videoId || queue[idx]?.id || "").trim();
+        if (downloadedMapRef.current[vid]) {
+          setQueueIndex(idx);
+          loadAndPlay(queue[idx]);
+          return;
+        }
+      }
+      showInfoToast("Không có bài hát đã tải xuống trước đó trong hàng đợi");
+      return;
+    }
+
     let prevIdx = queueIndex - 1;
     if (prevIdx < 0) {
       prevIdx = queue.length - 1;
@@ -1325,10 +2032,6 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     setQueueIndex(prevIdx);
     loadAndPlay(queue[prevIdx]);
   };
-
-  const getCurrentTime = useCallback(() => {
-    return audioRef.current?.currentTime ?? 0;
-  }, []);
 
   const seek = useCallback(
     (timeSec: number) => {
@@ -1347,8 +2050,17 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       if (Number.isFinite(dur) && (dur - timeSec > cfSec + PRELOAD_LEAD_SECONDS + 1 || dur - timeSec <= 0.4)) {
         clearStandbyPreload();
       }
+
+      if (settingsRef.current.discordRpcEnabled && currentSongRef.current) {
+        if (discordSeekTimerRef.current !== null) {
+          window.clearTimeout(discordSeekTimerRef.current);
+        }
+        discordSeekTimerRef.current = window.setTimeout(() => {
+          syncDiscordPresenceNow();
+        }, 500);
+      }
     },
-    [cancelCrossfade, clearStandbyPreload, getEffectiveCrossfadeSec, getMasterGain]
+    [cancelCrossfade, clearStandbyPreload, getEffectiveCrossfadeSec, getMasterGain, syncDiscordPresenceNow]
   );
 
   const setVolume = (vol: number) => {
@@ -1555,6 +2267,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       isShuffle,
       isLiked,
       isLoadingStream,
+      isFetchingAutoplay,
       lyricsData,
       isLyricsOpen,
       isQueueOpen,
@@ -1563,6 +2276,12 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       fullscreenTab,
       settings,
       error,
+      youtubeAuthToast,
+      infoToast,
+      isOnline,
+      downloadedMap,
+      downloadProgressMap,
+      discordStatus,
       accentColor,
       streamInfo,
       resumeData,
@@ -1593,6 +2312,14 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       setActivePlaylistId,
       openQuickSwitch,
       closeQuickSwitch,
+      dismissYoutubeAuthToast,
+      resetBotCircuitBreaker,
+      showInfoToast,
+      dismissInfoToast,
+      refreshDownloadedTracks,
+      downloadTrack,
+      cancelDownload,
+      deleteDownloadedTrack,
       replaceSongVersion,
     }),
     [
@@ -1609,6 +2336,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       isShuffle,
       isLiked,
       isLoadingStream,
+      isFetchingAutoplay,
       lyricsData,
       isLyricsOpen,
       isQueueOpen,
@@ -1617,6 +2345,12 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       fullscreenTab,
       settings,
       error,
+      youtubeAuthToast,
+      infoToast,
+      isOnline,
+      downloadedMap,
+      downloadProgressMap,
+      discordStatus,
       accentColor,
       streamInfo,
       resumeData,
@@ -1631,6 +2365,14 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       updateSettings,
       openQuickSwitch,
       closeQuickSwitch,
+      dismissYoutubeAuthToast,
+      resetBotCircuitBreaker,
+      showInfoToast,
+      dismissInfoToast,
+      refreshDownloadedTracks,
+      downloadTrack,
+      cancelDownload,
+      deleteDownloadedTrack,
       replaceSongVersion,
     ]
   );

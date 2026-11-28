@@ -12,10 +12,13 @@ import {
   RefreshCw,
   ListPlus,
   MoreHorizontal,
+  ArrowDownToLine,
+  Trash,
 } from "lucide-react";
 import type { Song } from "../types.ts";
 import { usePlayer } from "../context/PlayerContext.tsx";
 import { TrackThumbnail } from "./TrackThumbnail.tsx";
+import { DownloadButton } from "./DownloadButton.tsx";
 import { usePlaylistPicker } from "./PlaylistPickerPopover.tsx";
 
 interface SongRowProps {
@@ -38,9 +41,23 @@ export const SongRow: React.FC<SongRowProps> = ({
   onRemoveFromPlaylist,
   showRemoveOption,
 }) => {
-  const { currentSong, isPlaying, playSong, togglePlay, addToQueue, openQuickSwitch } =
-    usePlayer();
+  const {
+    currentSong,
+    isPlaying,
+    isOnline,
+    downloadedMap,
+    playSong,
+    togglePlay,
+    addToQueue,
+    openQuickSwitch,
+    showInfoToast,
+    downloadTrack,
+    deleteDownloadedTrack,
+  } = usePlayer();
   const { openPlaylistPicker } = usePlaylistPicker();
+  const trackVid = (song.videoId || song.id || "").trim();
+  const isDownloaded = Boolean(downloadedMap[trackVid]);
+  const isUnavailableOffline = !isOnline && !isDownloaded;
   const [isLiked, setIsLiked] = useState<boolean>(false);
   const [hasCheckedLike, setHasCheckedLike] = useState<boolean>(false);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
@@ -82,6 +99,10 @@ export const SongRow: React.FC<SongRowProps> = ({
   const isCurrent = currentSong?.id === song.id;
 
   const handlePlayClick = () => {
+    if (isUnavailableOffline) {
+      showInfoToast("Bài hát này chưa được tải xuống, cần kết nối mạng để phát");
+      return;
+    }
     if (isCurrent) {
       togglePlay();
     } else {
@@ -112,7 +133,9 @@ export const SongRow: React.FC<SongRowProps> = ({
         className={`group flex items-center gap-3 px-3 py-2 rounded-xl text-[13px] font-sans transition-all duration-150 select-none border ${
           isCurrent
             ? "bg-white/[0.11] text-white border-white/[0.12] shadow-sm"
-            : "bg-transparent text-white/70 hover:text-white hover:bg-white/[0.06] border-transparent"
+            : isUnavailableOffline
+              ? "bg-transparent text-white/40 opacity-50 hover:opacity-75 hover:bg-white/[0.03] border-transparent"
+              : "bg-transparent text-white/70 hover:text-white hover:bg-white/[0.06] border-transparent"
         }`}
       >
         {/* Main clickable area for playing track */}
@@ -201,6 +224,8 @@ export const SongRow: React.FC<SongRowProps> = ({
           >
             <Plus className="w-3.5 h-3.5" />
           </button>
+
+          <DownloadButton song={song} size="sm" />
 
           <button
             type="button"
@@ -319,6 +344,37 @@ export const SongRow: React.FC<SongRowProps> = ({
             >
               <Plus className="w-4 h-4 flex-shrink-0" />
               <span>Thêm vào playlist...</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setContextMenu(null);
+                if (isDownloaded) {
+                  if (window.confirm(`Xóa file tải offline của "${song.title}" khỏi ổ cứng?`)) {
+                    deleteDownloadedTrack(trackVid);
+                  }
+                } else {
+                  downloadTrack(song);
+                }
+              }}
+              className={`w-full px-3 py-2 text-left flex items-center gap-2.5 rounded-xl transition-colors cursor-pointer ${
+                isDownloaded
+                  ? "text-emerald-300 hover:bg-rose-500/15 hover:text-rose-300"
+                  : "text-white/85 hover:bg-white/[0.10] hover:text-white"
+              }`}
+            >
+              {isDownloaded ? (
+                <>
+                  <Trash className="w-4 h-4 flex-shrink-0" />
+                  <span>Xóa file tải Offline</span>
+                </>
+              ) : (
+                <>
+                  <ArrowDownToLine className="w-4 h-4 flex-shrink-0" />
+                  <span>Tải xuống nghe Offline</span>
+                </>
+              )}
             </button>
 
             {showRemoveOption && onRemoveFromPlaylist && (

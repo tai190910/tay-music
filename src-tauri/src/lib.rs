@@ -1,6 +1,8 @@
 mod cipher;
 mod commands;
 mod db;
+mod discord_rpc;
+mod downloader;
 mod importer;
 mod innertube;
 mod lyrics;
@@ -8,6 +10,7 @@ mod models;
 mod proxy;
 mod soundcloud;
 mod spotify_webview;
+mod youtube_webview;
 
 use commands::AppState;
 use db::MochyDatabase;
@@ -102,6 +105,7 @@ async fn run_auto_sync_if_enabled(app: tauri::AppHandle) {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             if cfg!(debug_assertions) {
                 app.handle().plugin(
@@ -114,17 +118,38 @@ pub fn run() {
             let db_path = resolve_and_migrate_db_path(app);
             let db = Arc::new(MochyDatabase::open(&db_path).expect("Failed to open SQLite database"));
 
+            let default_dl_dir = db_path
+                .parent()
+                .map(|p| p.join("downloads"))
+                .unwrap_or_else(|| std::env::temp_dir().join("tay_music_downloads"));
+            let initial_dl_dir = db
+                .get_setting("downloads_dir")
+                .ok()
+                .flatten()
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .map(std::path::PathBuf::from)
+                .unwrap_or(default_dl_dir);
+            let downloader = Arc::new(downloader::DownloadManager::new(initial_dl_dir));
+
             let http_client = Client::builder()
                 .redirect(reqwest::redirect::Policy::limited(6))
                 .pool_max_idle_per_host(8)
                 .build()
                 .expect("Failed to create reqwest Client");
 
-            let stream_proxy = tauri::async_runtime::block_on(LocalStreamProxy::start(http_client.clone()))
-                .expect("Failed to start LocalStreamProxy");
+            let stream_proxy = tauri::async_runtime::block_on(
+                LocalStreamProxy::start_with_downloads(
+                    http_client.clone(),
+                    downloader.downloads_dir_handle(),
+                ),
+            )
+            .expect("Failed to start LocalStreamProxy");
 
             let inner_tube = Arc::new(InnerTube::new(http_client.clone()));
+            youtube_webview::load_saved_auth_sync(&inner_tube, &db);
             let importer = Arc::new(MusicImportService::new());
+            let discord_rpc = Arc::new(discord_rpc::DiscordRpcManager::new());
 
             app.manage(AppState {
                 db,
@@ -132,7 +157,11 @@ pub fn run() {
                 http_client,
                 stream_proxy,
                 importer,
+                discord_rpc: discord_rpc.clone(),
+                downloader,
             });
+
+            discord_rpc::spawn_background_reconnect(app.handle().clone(), discord_rpc);
 
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
@@ -140,6 +169,21 @@ pub fn run() {
             });
 
             Ok(())
+        })
+        .on_window_event(|window, event| {
+            if window.label() == "main"
+                && matches!(
+                    event,
+                    tauri::WindowEvent::CloseRequested { .. } | tauri::WindowEvent::Destroyed
+                )
+            {
+                if let Some(state) = window.try_state::<AppState>() {
+                    let rpc = state.discord_rpc.clone();
+                    std::thread::spawn(move || {
+                        rpc.shutdown_sync();
+                    });
+                }
+            }
         })
         .invoke_handler(tauri::generate_handler![
             commands::youtube_search,
@@ -177,6 +221,22 @@ pub fn run() {
             commands::spotify_cancel_import,
             commands::spotify_get_auto_sync,
             commands::spotify_set_auto_sync,
+            commands::youtube_open_login,
+            commands::youtube_get_account,
+            commands::youtube_logout,
+            commands::update_discord_presence,
+            commands::clear_discord_presence,
+            commands::get_discord_rpc_status,
+            commands::download_track,
+            commands::cancel_download,
+            commands::delete_downloaded_track,
+            commands::get_downloaded_tracks,
+            commands::get_local_playback,
+            commands::get_storage_info,
+            commands::pick_downloads_folder,
+            commands::change_downloads_dir,
+            commands::export_user_data_backup,
+            commands::import_user_data_backup,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -721,5 +781,217 @@ mod tests {
             ) >= 0.80,
             "Expected Pass 1 Vocal-First search to pick official vocal track"
         );
+    }
+
+    #[tokio::test]
+    async fn test_sapisidhash_stream_cache_and_cdn_thumbnails() {
+        let cookie = "VISITOR_INFO1_LIVE=xyz; SAPISID=abc123def/456; __Secure-1PAPISID=p1_val; __Secure-3PAPISID=p3_val; SID=sid_token";
+        let auth = InnerTube::sapisid_hash(cookie, "https://music.youtube.com")
+            .expect("Expected SAPISIDHASH header");
+        assert!(auth.contains("SAPISIDHASH "));
+        assert!(auth.contains("SAPISID1PHASH "));
+        assert!(auth.contains("SAPISID3PHASH "));
+
+        let mut cookie_map = std::collections::HashMap::new();
+        cookie_map.insert("SAPISID".to_string(), "abc123def/456".to_string());
+        cookie_map.insert("SID".to_string(), "sid_token".to_string());
+        assert!(youtube_webview::has_youtube_auth_cookies(&cookie_map));
+
+        let client = Client::new();
+        let inner = InnerTube::new(client);
+        inner
+            .set_auth(
+                Some(cookie.to_string()),
+                None,
+                Some("0".to_string()),
+                None,
+                Some("CgtTestVisitorData".to_string()),
+            )
+            .await;
+        assert!(inner.has_cookie().await);
+
+        let dummy_playback = crate::models::PlaybackData {
+            audio_config: None,
+            video_details: None,
+            playback_tracking: None,
+            format: serde_json::json!({ "itag": 251, "mimeType": "audio/webm; codecs=\"opus\"" }),
+            stream_url: "https://rr1---sn-test.googlevideo.com/videoplayback?rn=0".to_string(),
+            original_stream_url: "https://rr1---sn-test.googlevideo.com/videoplayback?rn=0".to_string(),
+            stream_expires_in_seconds: 21600,
+            stream_client: "WEB_REMIX".to_string(),
+            stream_headers: std::collections::HashMap::new(),
+        };
+        inner
+            .put_cached_stream("bNp9pn0ni3I", "HIGH", &dummy_playback)
+            .await;
+        let hit = inner
+            .get_cached_stream("bNp9pn0ni3I", "HIGH")
+            .await
+            .expect("Expected 2h stream cache hit");
+        assert_eq!(hit.stream_client, "WEB_REMIX");
+
+        // Verify DB rewrites googleusercontent thumbnails to i.ytimg.com/vi/<id>/mqdefault.jpg
+        let tmp = std::env::temp_dir().join(format!("tay_music_thumb_test_{}.db", db::now_ms()));
+        let db = MochyDatabase::open(&tmp).expect("open db");
+        let polluted_song = serde_json::json!({
+            "id": "bNp9pn0ni3I",
+            "title": "Chúng Ta Của Hiện Tại",
+            "artists": [{ "name": "Sơn Tùng M-TP", "id": null }],
+            "duration": 302,
+            "thumbnail": "https://lh3.googleusercontent.com/some-rate-limited-artwork=w544-h544"
+        });
+        db.upsert_song_value(&polluted_song).unwrap();
+        let saved = db.get_song("bNp9pn0ni3I").unwrap().unwrap();
+        assert_eq!(
+            saved.thumbnail.as_deref(),
+            Some("https://i.ytimg.com/vi/bNp9pn0ni3I/mqdefault.jpg")
+        );
+        drop(db);
+        let _ = std::fs::remove_file(&tmp);
+        let _ = std::fs::remove_file(tmp.with_extension("db-wal"));
+        let _ = std::fs::remove_file(tmp.with_extension("db-shm"));
+    }
+
+    #[test]
+    fn test_discord_rpc_sanitization_and_graceful_offline() {
+        assert_eq!(discord_rpc::sanitize_discord_text("A", "Tày Music"), "A ");
+        assert_eq!(discord_rpc::sanitize_discord_text("   ", "Tày Music"), "Tày Music");
+
+        let long_vn = "Chúng Ta Của Hiện Tại Và Những Bản Nhạc Lofi Chill Buồn Rơi Nước Mắt Thâu Đêm Suốt Sáng Với Âm Thanh Tuyệt Đỉnh Vũ Trụ";
+        let truncated = discord_rpc::sanitize_discord_text(long_vn, "Tày Music");
+        assert!(truncated.len() <= 116);
+        assert!(truncated.ends_with("..."));
+
+        let manager = discord_rpc::DiscordRpcManager::new();
+        let status = manager.current_status();
+        assert!(!status.connected);
+        manager.shutdown_sync();
+    }
+
+    #[tokio::test]
+    async fn test_local_proxy_range_streaming() {
+        let dir = std::env::temp_dir().join(format!("tay_music_local_proxy_{}", db::now_ms()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let sample_bytes: Vec<u8> = (0..=255u8).cycle().take(4096).collect();
+        std::fs::write(dir.join("dQw4w9WgXcQ.m4a"), &sample_bytes).unwrap();
+        std::fs::write(dir.join("dQw4w9WgXcQ.jpg"), vec![0xFFu8; 600]).unwrap();
+
+        let dir_handle = Arc::new(tokio::sync::RwLock::new(dir.clone()));
+        let client = Client::new();
+        let proxy = LocalStreamProxy::start_with_downloads(client.clone(), dir_handle)
+            .await
+            .expect("start local proxy");
+
+        let audio_url = proxy.get_local_audio_url("dQw4w9WgXcQ");
+        let res = client
+            .get(&audio_url)
+            .header("Range", "bytes=100-611")
+            .send()
+            .await
+            .expect("local range fetch");
+        assert_eq!(res.status().as_u16(), 206);
+        assert_eq!(
+            res.headers()
+                .get("content-range")
+                .and_then(|v| v.to_str().ok()),
+            Some("bytes 100-611/4096")
+        );
+        let chunk = res.bytes().await.unwrap();
+        assert_eq!(chunk.len(), 512);
+        assert_eq!(&chunk[..], &sample_bytes[100..612]);
+
+        let cover_res = client
+            .get(proxy.get_local_cover_url("dQw4w9WgXcQ"))
+            .send()
+            .await
+            .expect("local cover fetch");
+        assert_eq!(cover_res.status().as_u16(), 200);
+        assert_eq!(cover_res.bytes().await.unwrap().len(), 600);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_safe_move_file_and_downloads_index() {
+        let dir_a = std::env::temp_dir().join(format!("tay_move_a_{}", db::now_ms()));
+        let dir_b = std::env::temp_dir().join(format!("tay_move_b_{}", db::now_ms()));
+        std::fs::create_dir_all(&dir_a).unwrap();
+
+        let src = dir_a.join("abc123def45.m4a");
+        let dst = dir_b.join("abc123def45.m4a");
+        std::fs::write(&src, b"local audio payload test").unwrap();
+
+        downloader::DownloadManager::safe_move_file(&src, &dst).expect("safe move");
+        assert!(!src.exists());
+        assert!(dst.is_file());
+        assert_eq!(std::fs::read(&dst).unwrap(), b"local audio payload test");
+
+        let _ = std::fs::remove_dir_all(&dir_a);
+        let _ = std::fs::remove_dir_all(&dir_b);
+    }
+
+    #[test]
+    fn test_backup_export_import_roundtrip() {
+        let now = db::now_ms();
+        let tmp1 = std::env::temp_dir().join(format!("tay_bkp1_{now}.db"));
+        let tmp2 = std::env::temp_dir().join(format!("tay_bkp2_{now}.db"));
+
+        let db1 = MochyDatabase::open(&tmp1).unwrap();
+        let song = serde_json::json!({
+            "id": "bNp9pn0ni3I",
+            "title": "Chúng Ta Của Hiện Tại",
+            "artists": [{ "name": "Sơn Tùng M-TP", "id": null }],
+            "duration": 302
+        });
+        db1.upsert_song_value(&song).unwrap();
+        db1.set_liked("bNp9pn0ni3I", true, None).unwrap();
+        let pl = db1.create_playlist("Nhạc Offline", Some("test"), None, None).unwrap();
+        db1.add_song_to_playlist(&pl.id, "bNp9pn0ni3I", None).unwrap();
+
+        let backup = db1
+            .export_backup_json(Some(serde_json::json!({ "autoplayEnabled": false })))
+            .expect("export backup");
+
+        let db2 = MochyDatabase::open(&tmp2).unwrap();
+        let res = db2.import_backup_json(&backup).expect("import backup");
+        assert_eq!(res.songs_restored, 1);
+        assert_eq!(res.liked_restored, 1);
+        assert_eq!(res.playlists_restored, 1);
+        assert!(db2.is_liked("bNp9pn0ni3I").unwrap());
+        let pls2 = db2.get_playlists().unwrap();
+        assert_eq!(pls2.len(), 1);
+        assert_eq!(pls2[0].name, "Nhạc Offline");
+
+        drop(db1);
+        drop(db2);
+        for t in [&tmp1, &tmp2] {
+            let _ = std::fs::remove_file(t);
+            let _ = std::fs::remove_file(t.with_extension("db-wal"));
+            let _ = std::fs::remove_file(t.with_extension("db-shm"));
+        }
+    }
+
+    #[tokio::test]
+    async fn test_offline_local_lyrics_read() {
+        let dir = std::env::temp_dir().join(format!("tay_lrc_test_{}", db::now_ms()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let lrc_content = "[00:01.50] Never gonna give you up\n[00:05.00] Never gonna let you down\n";
+        std::fs::write(dir.join("dQw4w9WgXcQ.lrc"), lrc_content).unwrap();
+
+        let dm = downloader::DownloadManager::new(dir.clone());
+        let raw = dm
+            .read_local_lyrics("dQw4w9WgXcQ")
+            .await
+            .expect("expected local .lrc content offline");
+        let parsed = lyrics::LyricsUtils::parse_lyrics(&raw);
+
+        assert!(parsed.is_synced);
+        assert_eq!(parsed.lines.len(), 2);
+        assert_eq!(parsed.lines[0].time, 1500);
+        assert_eq!(parsed.lines[0].text, "Never gonna give you up");
+        assert_eq!(parsed.lines[1].time, 5000);
+        assert_eq!(parsed.lines[1].text, "Never gonna let you down");
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

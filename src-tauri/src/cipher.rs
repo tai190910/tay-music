@@ -118,6 +118,16 @@ impl PlayerJsFetcher {
         Some(PlayerJsResult { player_js, hash })
     }
 
+    pub async fn get_signature_timestamp(client: &Client) -> Option<i64> {
+        static STS_RE: OnceLock<Regex> = OnceLock::new();
+        let pjs = Self::get_player_js(client, false).await?;
+        let re = STS_RE
+            .get_or_init(|| Regex::new(r"(?:signatureTimestamp|sts)\s*:\s*(\d{5})").unwrap());
+        re.captures(&pjs.player_js)
+            .and_then(|c| c.get(1))
+            .and_then(|m| m.as_str().parse::<i64>().ok())
+    }
+
     pub fn invalidate_cache() {
         if let Ok(mut guard) = mem_cache().lock() {
             *guard = None;

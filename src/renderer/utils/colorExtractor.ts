@@ -1,5 +1,7 @@
 // src/renderer/utils/colorExtractor.ts
 
+import { isThumbnailUrlFailed, markThumbnailUrlFailed } from "../components/TrackThumbnail.tsx";
+
 export interface ExtractedColor {
   hex: string;
   rgb: [number, number, number];
@@ -12,16 +14,24 @@ export const DEFAULT_COLOR: ExtractedColor = {
   rgbString: "124, 104, 85",
 };
 
+const colorCache = new Map<string, ExtractedColor>();
+const MAX_COLOR_CACHE = 300;
+
 /**
  * Extracts a dominant, vibrant accent color from an image URL.
- * Automatically avoids dark/black, washed-out white, or dull gray tones.
+ * Automatically avoids dark/black, washed-out white, or dull gray tones,
+ * and caches both extracted colors and failed URLs to avoid redundant requests.
  */
 export async function extractDominantColor(imageUrl?: string | null): Promise<ExtractedColor> {
-  if (!imageUrl) return DEFAULT_COLOR;
+  if (!imageUrl || isThumbnailUrlFailed(imageUrl)) return DEFAULT_COLOR;
+
+  const cached = colorCache.get(imageUrl);
+  if (cached) return cached;
 
   return new Promise((resolve) => {
     const img = new Image();
     img.crossOrigin = "anonymous";
+    img.decoding = "async";
 
     img.onload = () => {
       try {
@@ -46,15 +56,15 @@ export async function extractDominantColor(imageUrl?: string | null): Promise<Ex
           const b = imgData[i + 2];
           const a = imgData[i + 3];
 
-          if (a < 128) continue; // Skip transparent
+          if (a < 128) continue;
 
           const total = r + g + b;
-          if (total < 75 || total > 680) continue; // Skip too dark or blown out
+          if (total < 75 || total > 680) continue;
 
           const max = Math.max(r, g, b);
           const min = Math.min(r, g, b);
           const delta = max - min;
-          if (delta < 25) continue; // Skip dull grays
+          if (delta < 25) continue;
 
           const saturation = delta / max;
           const score = saturation * (max / 255);
@@ -67,22 +77,28 @@ export async function extractDominantColor(imageUrl?: string | null): Promise<Ex
           }
         }
 
-        if (maxScore > 0) {
-          const hex = `#${((1 << 24) + (bestR << 16) + (bestG << 8) + bestB).toString(16).slice(1)}`;
-          resolve({
-            hex,
-            rgb: [bestR, bestG, bestB],
-            rgbString: `${bestR}, ${bestG}, ${bestB}`,
-          });
-        } else {
-          resolve(DEFAULT_COLOR);
+        const result: ExtractedColor =
+          maxScore > 0
+            ? {
+                hex: `#${((1 << 24) + (bestR << 16) + (bestG << 8) + bestB).toString(16).slice(1)}`,
+                rgb: [bestR, bestG, bestB],
+                rgbString: `${bestR}, ${bestG}, ${bestB}`,
+              }
+            : DEFAULT_COLOR;
+
+        if (colorCache.size >= MAX_COLOR_CACHE) {
+          const firstKey = colorCache.keys().next().value;
+          if (firstKey) colorCache.delete(firstKey);
         }
+        colorCache.set(imageUrl, result);
+        resolve(result);
       } catch {
         resolve(DEFAULT_COLOR);
       }
     };
 
     img.onerror = () => {
+      markThumbnailUrlFailed(imageUrl);
       resolve(DEFAULT_COLOR);
     };
 
